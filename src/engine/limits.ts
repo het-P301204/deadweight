@@ -61,6 +61,18 @@ export const MAX_LINE_LENGTH = 4000
 /** Source lines scanned per file. */
 export const MAX_LINES = 60_000
 
+/**
+ * Characters retained of any identifier read out of an artifact's bytes: a
+ * pickle global, a container member name, a tensor metadata key or value.
+ *
+ * These are the only strings in the recognition path that come from the
+ * artifact itself rather than from source code, and they reach both the JSON
+ * report and the terminal. Unclipped, one of them can be as long as the
+ * entire head slice -- a 64 KiB name produced a 65,000-character line in a
+ * report about a 64 KiB file.
+ */
+export const MAX_IDENTIFIER_CHARS = 200
+
 /** Characters of a call snippet retained for display. */
 export const MAX_SNIPPET_CHARS = 220
 

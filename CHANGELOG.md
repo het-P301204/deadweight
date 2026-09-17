@@ -104,9 +104,56 @@ release, and each one now has a regression test.
   All are built from code points now, and a test walks every source file to
   keep it that way.
 
+A second pass, over the recognition path and the browser surface, found five
+more. The first is the worst defect the project has had.
+
+- **An artifact could write into DEADWEIGHT's own output.** A pickle GLOBAL
+  name is bytes the stream chooses, decoded as latin1, and they reached the
+  report and the terminal verbatim — the one place in the engine where
+  artifact-derived text skipped `clip(sanitise(...))`. A stream naming
+  `ESC[2J ESC[32m### NO EXECUTION SURFACE FOUND ###` cleared the screen and
+  printed its own green verdict inside the report of a tool whose entire
+  output is a security verdict. The same name could run to the end of the
+  64 KiB head slice, turning a 64 KiB file into a 65,000-character line. Zip
+  member names and safetensors metadata — keys as well as values — had the
+  same gap. All now clipped and sanitised at the point of reading.
+- **The test that should have caught it could never fail.** It asserted
+  `expect(JSON.stringify(report)).not.toMatch(/[\x00-\x08\x1b]/)`, and
+  `JSON.stringify` escapes every control character into six ASCII characters,
+  so the pattern had nothing to match. It now walks the report's string
+  values and names the offending field. Three new tests cover the attack
+  itself, and each was confirmed to fail with the fix reverted.
+- **A duplicate finding id collided as a React key.** Ids are
+  `kind:artifact`, and one artifact could produce two `execution-surface`
+  findings — the generic one and the pickle notable-callable one — so the UI
+  could render one finding where the JSON export correctly showed two. A
+  security tool silently under-reporting is the wrong direction to fail in.
+  The pickle finding now has its own kind. Duplicate load-site locators and
+  colliding privilege-signal keys are deduplicated for the same reason.
+- **Unbounded rendering from artifact-controlled counts.** The context graph
+  capped nodes but not edges, drawing three `<path>` elements per load site
+  with no deduplication — 15,000 lines between four nodes for an artifact
+  loaded 5,000 times. The load stripe's detail string joined every load site,
+  reaching 94,000 characters in an `aria-label`. A crafted pickle produced
+  8,330 list items in the drawer. All bounded, with the true count shown.
+- **A raw error message reached the user.** `unexpectedGuidance` put
+  `error.message` in the "what to do" field, which for a filesystem error is
+  a host path and for a parser error is quoted input from the analysed
+  repository. `AnalysisError` detail strings were rendered without
+  `sanitise`, so a bidirectional override in a filename could reorder the
+  text of the error describing it. Both go through the guidance contract now.
+
+Also: `vitest` upgraded past GHSA-82fw-gwwq-j7x9 (`npm audit` clean);
+`canonicalJson` given a depth bound and told to refuse a `bigint` rather than
+silently serialise it as `{}`; `listZip`'s bounds guard made NaN-proof;
+`Math.max(...entries)` replaced with a `reduce`; SVG colours moved out of
+presentation attributes into `style`, where custom properties are portable;
+the exfiltration grep widened to `RTCPeerConnection`, which is the one
+channel `connect-src 'none'` cannot stop.
+
 ### Verification
 
-<!-- dw:tests -->296<!-- /dw --> tests across the engine and the design
+<!-- dw:tests -->308<!-- /dw --> tests across the engine and the design
 tokens. <!-- dw:ciasserts -->14<!-- /dw --> of CI's
 <!-- dw:cisteps -->21<!-- /dw --> steps assert the product's claims rather
 than only that it builds: no clock or randomness in the engine, an identical

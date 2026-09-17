@@ -218,7 +218,9 @@ export function PrivilegeList({ privileges }: { privileges: readonly PrivilegeSi
   return (
     <ul className="space-y-2">
       {privileges.map((privilege) => (
-        <li key={`${privilege.kind}-${privilege.line}`} className="flex gap-2.5">
+        <li // Two rules share the kind `secret-material`, and `collectSignals`
+        // de-dupes on kind AND label, so kind+line is not unique.
+        key={`${privilege.file}:${privilege.line}:${privilege.kind}:${privilege.label}`} className="flex gap-2.5">
           <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-code" />
           <div className="min-w-0">
             <p className="text-xs font-medium text-ink-0">{privilege.label}</p>

@@ -9,7 +9,7 @@
  * header claiming to be four gigabytes is a thing a file can claim.
  */
 
-import { MAX_SAFETENSORS_HEADER_BYTES } from './limits.ts'
+import { MAX_IDENTIFIER_CHARS, MAX_SAFETENSORS_HEADER_BYTES, clip, sanitise } from './limits.ts'
 
 const UTF8 = new TextDecoder('utf-8', { fatal: false })
 
@@ -70,7 +70,12 @@ export function readSafetensorsHeader(
       if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
         for (const [mk, mv] of Object.entries(value as Record<string, unknown>)) {
           if (mk === '__proto__' || mk === 'constructor' || mk === 'prototype') continue
-          if (typeof mv === 'string') metadata[mk] = mv.slice(0, 256)
+          // Both halves come from the header, so both are clipped and sanitised.
+          // The value was length-bounded already; the key was not bounded at all,
+          // and neither was stripped of control characters.
+          if (typeof mv === 'string') {
+            metadata[clip(sanitise(mk), MAX_IDENTIFIER_CHARS)] = clip(sanitise(mv), 256)
+          }
         }
       }
       continue

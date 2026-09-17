@@ -177,21 +177,42 @@ export function sha256Text(text: string): string {
  * `undefined`. Two analyses of the same tree must produce byte-identical
  * output, which means the digest cannot depend on property insertion order.
  */
+/**
+ * Depth past which a value is not a report.
+ *
+ * The serialiser is directly recursive, so an unbounded structure overflows
+ * the stack -- measured at depth 3468, which is *shallower* than native
+ * `JSON.stringify` manages, while `JSON.parse` will happily build a
+ * million-deep array. No report field is typed `unknown`, so nothing
+ * artifact-derived reaches this today; the cap is here so that a later field
+ * that does cannot turn a hostile document into a crash.
+ */
+const MAX_JSON_DEPTH = 256
+
 export function canonicalJson(value: unknown): string {
-  return stringify(value)
+  return stringify(value, 0)
 }
 
-function stringify(value: unknown): string {
+function stringify(value: unknown, depth: number): string {
+  if (depth > MAX_JSON_DEPTH) {
+    throw new Error(`canonicalJson: value nested deeper than ${MAX_JSON_DEPTH}`)
+  }
   if (value === null) return 'null'
   const t = typeof value
   if (t === 'number') return Number.isFinite(value as number) ? JSON.stringify(value) : 'null'
   if (t === 'boolean' || t === 'string') return JSON.stringify(value)
   if (t === 'undefined' || t === 'function' || t === 'symbol') return 'null'
-  if (Array.isArray(value)) return `[${value.map(stringify).join(',')}]`
+  // Explicit: a bigint has no JSON form, and falling through to the object
+  // branch below would silently serialise it as `{}` -- two different values
+  // sharing a digest is the one thing this function must not do.
+  if (t === 'bigint') throw new Error('canonicalJson: bigint has no canonical form')
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stringify(item, depth + 1)).join(',')}]`
+  }
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stringify(v)}`).join(',')}}`
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stringify(v, depth + 1)}`).join(',')}}`
 }
 
 /** Short, stable identifier derived from a string. Used for element ids. */

@@ -362,6 +362,13 @@ export interface Alternative {
 
 export type FindingKind =
   | 'execution-surface'
+  /**
+   * Named separately from `execution-surface` rather than sharing its kind.
+   * A finding id is `kind:artifact`, so two findings of one kind about one
+   * artifact collided -- and a collided id is a duplicate React key, which is
+   * a security tool quietly rendering one finding instead of two.
+   */
+  | 'pickle-notable-callable'
   | 'privileged-execution-surface'
   | 'unpinned-loader-default'
   | 'remote-code-trust'

@@ -41,6 +41,18 @@ import {
 } from '../ui/primitives.tsx'
 import { BEHAVIOUR_STYLE, SURFACE, TYPE } from '../ui/tokens.ts'
 
+/**
+ * Display caps for the two lists whose length is chosen by the artifact.
+ *
+ * Every other list in the drawer is bounded by something the project did --
+ * how many load sites, how many scanners. These two are bounded only by the
+ * 64 KiB head slice: a crafted pickle produced 8,330 global names and a
+ * crafted safetensors header 4,000 metadata rows. The count is always shown
+ * alongside, so a cap never silently hides the size of the thing.
+ */
+const GLOBALS_SHOWN = 60
+const METADATA_SHOWN = 24
+
 type Tab = 'behaviour' | 'path' | 'evidence' | 'alternative'
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -295,13 +307,19 @@ export function ArtifactDrawer({
                   </p>
                   {artifact.pickle.globals.length > 0 ? (
                     <ul className="mt-3 flex flex-wrap gap-1.5">
-                      {artifact.pickle.globals.map((name) => {
+                      {/* Capped. The global count is bounded only by the 64 KiB head
+                          slice, so a crafted stream produced 8,330 list items in one
+                          drawer. Notable names sort first so the cap never hides one. */}
+                      {[...artifact.pickle.globals]
+                        .sort((a, b) => Number(notableGlobals([b]).length) - Number(notableGlobals([a]).length))
+                        .slice(0, GLOBALS_SHOWN)
+                        .map((name) => {
                         const notable = notableGlobals([name]).length > 0
                         return (
                           <li
                             key={name}
                             className={cx(
-                              'rounded border px-1.5 py-0.5 font-mono text-2xs',
+                              'rounded border px-1.5 py-0.5 font-mono text-2xs break-all',
                               notable
                                 ? 'border-code/40 bg-code/10 text-code'
                                 : 'border-line-2 text-ink-2',
@@ -311,6 +329,11 @@ export function ArtifactDrawer({
                           </li>
                         )
                       })}
+                      {artifact.pickle.globals.length > GLOBALS_SHOWN && (
+                        <li className={cx(TYPE.note, "px-1.5 py-0.5")}>
+                          and {artifact.pickle.globals.length - GLOBALS_SHOWN} more
+                        </li>
+                      )}
                     </ul>
                   ) : (
                     <p className="mt-3 text-xs text-ink-2">
@@ -335,12 +358,21 @@ export function ArtifactDrawer({
                   </p>
                   {Object.keys(artifact.tensorHeader.metadata).length > 0 && (
                     <dl className="mt-3 space-y-1">
-                      {Object.entries(artifact.tensorHeader.metadata).map(([key, value]) => (
+                      {/* Capped for the same reason: both halves come from the header. */}
+                      {Object.entries(artifact.tensorHeader.metadata)
+                        .slice(0, METADATA_SHOWN)
+                        .map(([key, value]) => (
                         <div key={key} className="flex gap-2 font-mono text-2xs">
-                          <dt className="text-ink-3">{key}</dt>
-                          <dd className="text-ink-1">{value}</dd>
+                          <dt className="shrink-0 break-all text-ink-3">{key}</dt>
+                          <dd className="break-all text-ink-1">{value}</dd>
                         </div>
                       ))}
+                      {Object.keys(artifact.tensorHeader.metadata).length > METADATA_SHOWN && (
+                        <p className={cx(TYPE.note, "pt-1")}>
+                          and {Object.keys(artifact.tensorHeader.metadata).length - METADATA_SHOWN}{" "}
+                          more metadata {Object.keys(artifact.tensorHeader.metadata).length - METADATA_SHOWN === 1 ? "key" : "keys"}
+                        </p>
+                      )}
                     </dl>
                   )}
                 </section>

@@ -12,6 +12,14 @@
  * to do.
  */
 
+import { clip, sanitise } from './limits.ts'
+
+/**
+ * Characters kept of a detail string. Long enough for a path and a parser
+ * message, short enough that a hostile filename cannot fill a terminal.
+ */
+const MAX_DETAIL_CHARS = 400
+
 export type AnalysisErrorCode =
   | 'no-source-tree'
   | 'tree-empty'
@@ -25,6 +33,8 @@ export interface ErrorGuidance {
   readonly what: string
   readonly why: string
   readonly fix: string
+  /** The underlying message, when the failure did not come from the engine. */
+  readonly detail?: string
 }
 
 const GUIDANCE: Record<AnalysisErrorCode, ErrorGuidance> = {
@@ -76,11 +86,18 @@ export class AnalysisError extends Error {
     // `deadweight.yaml:2: tab indentation is not accepted` is actionable;
     // "the configuration could not be understood" on its own is not. The UI
     // reads `guidance` for its headline and `detail` for the expandable part.
-    super(detail === undefined ? guidance.what : `${guidance.what} ${detail}`)
+    // Sanitised on the way in. A detail string is assembled from things the
+    // analysed repository chose -- a path, a config line, a parser message --
+    // and it is rendered into a <pre> and written to a terminal. A
+    // bidirectional override in a filename would otherwise reorder the text
+    // of the error describing it, which is the exact technique `sanitise`
+    // exists to stop.
+    const safe = detail === undefined ? undefined : clip(sanitise(detail), MAX_DETAIL_CHARS)
+    super(safe === undefined ? guidance.what : `${guidance.what} ${safe}`)
     this.name = 'AnalysisError'
     this.code = code
     this.guidance = guidance
-    this.detail = detail ?? null
+    this.detail = safe ?? null
   }
 }
 
@@ -93,6 +110,11 @@ export function unexpectedGuidance(error: unknown): ErrorGuidance {
   return {
     what: 'The analysis stopped on an unexpected error.',
     why: 'DEADWEIGHT could not finish reading the project, so the report you would see would be incomplete rather than empty.',
-    fix: error instanceof Error ? error.message : String(error),
+    // A fixed instruction, not the thrown message. The message can carry a
+    // host path from a filesystem error and analysed-repository bytes from a
+    // parser error (V8 quotes the offending input), neither of which is a
+    // thing the reader can act on. It goes in `detail` instead.
+    fix: 'Re-run the analysis. If it stops again, the detail below is the underlying error.',
+    detail: clip(sanitise(error instanceof Error ? error.message : String(error)), MAX_DETAIL_CHARS),
   }
 }

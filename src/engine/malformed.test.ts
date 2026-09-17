@@ -37,6 +37,30 @@ const CONTROL_CHARACTERS = new RegExp(
   `[${String.fromCharCode(0)}-${String.fromCharCode(8)}${String.fromCharCode(27)}]`,
 )
 
+/**
+ * Every string anywhere in a value that carries a control character.
+ *
+ * Returns the offenders rather than a boolean so a failure names the field.
+ * Walks the object because the serialised form cannot be tested: see the
+ * assertion below.
+ */
+export function offendingStrings(value: unknown, path = '$'): string[] {
+  if (typeof value === 'string') {
+    return CONTROL_CHARACTERS.test(value) ? [`${path} = ${JSON.stringify(value.slice(0, 80))}`] : []
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, at) => offendingStrings(item, `${path}[${at}]`))
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, item]) => {
+      // A hostile key is as much of a problem as a hostile value.
+      const here = CONTROL_CHARACTERS.test(key) ? [`${path} has key ${JSON.stringify(key)}`] : []
+      return [...here, ...offendingStrings(item, `${path}.${key}`)]
+    })
+  }
+  return []
+}
+
 async function walk(directory: string): Promise<string[]> {
   const out: string[] = []
   for (const item of await readdir(directory, { withFileTypes: true })) {
@@ -105,7 +129,12 @@ describe('the malformed corpus', () => {
 
   it('emits nothing with a control character in it', async () => {
     const report = await analyze(memoryTree('malformed', await corpusTree()))
-    expect(JSON.stringify(report)).not.toMatch(CONTROL_CHARACTERS)
+    // Walked over the live object, not over `JSON.stringify(report)`.
+    // Serialising escapes every control character into a `\uXXXX` sequence of
+    // ASCII, so the previous form of this assertion could never match and
+    // passed on every input -- which is why a pickle able to write ANSI
+    // escapes into the report went unnoticed until someone looked.
+    expect(offendingStrings(report)).toEqual([])
   })
 
   it('does not let a prototype-polluting document pollute anything', async () => {

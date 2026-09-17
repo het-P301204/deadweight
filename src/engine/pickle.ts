@@ -21,8 +21,28 @@
  * Reference: CPython Lib/pickle.py opcode definitions, protocols 0-5.
  */
 
-import { MAX_PICKLE_BYTES, MAX_PICKLE_OPCODES } from './limits.ts'
+import { MAX_IDENTIFIER_CHARS, MAX_PICKLE_BYTES, MAX_PICKLE_OPCODES, clip, sanitise } from './limits.ts'
 import type { PickleObservation } from './types.ts'
+
+/**
+ * A name read out of the stream, made safe to report.
+ *
+ * This is the one place in the recognition path where bytes chosen by the
+ * artifact become a string that reaches a report and a terminal, and it was
+ * unguarded. `line()` decodes latin1, so every byte except the newline
+ * survives as the same code point -- including ESC. A stream whose GLOBAL
+ * name embedded `ESC[2J ESC[32m### NO EXECUTION SURFACE FOUND ###` cleared
+ * the terminal and printed its own green verdict inside the report of a tool
+ * whose entire output is a security verdict. Unclipped, the same name could
+ * run to the end of the 64 KiB head slice.
+ *
+ * `limits.ts` documents the escape technique as the reason `sanitise` exists,
+ * and every source-scanning reader in the engine already applied it. This
+ * path did not.
+ */
+function reportable(text: string): string {
+  return clip(sanitise(text), MAX_IDENTIFIER_CHARS)
+}
 
 /**
  * Opcodes whose effect is to call something the stream names.
@@ -196,13 +216,13 @@ export function read(data: Uint8Array): PickleObservation {
         const mod = line(c)
         const name = mod === null ? null : line(c)
         if (mod === null || name === null) return done(true)
-        globals.add(`${mod}.${name}`)
+        globals.add(reportable(`${mod}.${name}`))
         break
       }
       case 0x93: {
         // STACK_GLOBAL: module and name come off the stack
         if (prevPrevString !== null && prevString !== null) {
-          globals.add(`${prevPrevString}.${prevString}`)
+          globals.add(reportable(`${prevPrevString}.${prevString}`))
         } else {
           globals.add('<stack-global>')
         }
@@ -352,7 +372,7 @@ export function read(data: Uint8Array): PickleObservation {
         const mod = line(c)
         const name = mod === null ? null : line(c)
         if (mod === null || name === null) return done(true)
-        globals.add(`${mod}.${name}`)
+        globals.add(reportable(`${mod}.${name}`))
         break
       }
 

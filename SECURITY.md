@@ -105,6 +105,26 @@ file before it reaches a terminal or a report. A filename containing an ANSI
 escape or a bidirectional override is a real technique for making a report say
 something other than what it found.
 
+That guard was applied to every reader that parses *source* and to none of the
+readers that parse *artifacts*, which turned out to be the gap that mattered.
+A pickle GLOBAL name is bytes the stream chooses, decoded as latin1 so every
+byte but the newline survives; a stream naming
+`ESC[2J ESC[32m### NO EXECUTION SURFACE FOUND ###` erased the terminal and
+printed its own green verdict inside DEADWEIGHT's report. Zip member names and
+safetensors metadata keys and values had the same gap, and none of the four was
+length-bounded, so a 64 KiB artifact could put a 65,000-character string in a
+report about itself. All four are clipped and sanitised at the point of reading
+now, and `MAX_IDENTIFIER_CHARS` names the bound.
+
+The test that should have caught this is worth describing, because it passed
+throughout. It asserted that `JSON.stringify(report)` contained no control
+character — and `JSON.stringify` escapes every control character into six
+ASCII characters, so the pattern could never match any input. **An invariant
+asserted against a serialised form is asserted against the escaping rules of
+that form, not against the data.** It now walks the report's string values and
+names the field. Every replacement test was confirmed to fail with its fix
+reverted.
+
 **Parsed JSON has prototype-polluting keys dropped at every level**
 (`__proto__`, `constructor`, `prototype`), and objects built from parsed
 documents are constructed by explicit assignment rather than by spreading a

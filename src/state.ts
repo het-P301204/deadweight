@@ -235,11 +235,15 @@ export function useApp(): AppState {
         setSelected(null)
         setFilters(NO_FILTERS)
       } catch (error) {
+        // For an engine error the detail is on the error; for anything else
+        // it is the underlying message, which `unexpectedGuidance` sanitises
+        // and moves out of `fix` so the "what to do" line stays actionable.
+        const guidance = isAnalysisError(error) ? error.guidance : unexpectedGuidance(error)
         dispatch({
           type: 'failed',
           source,
-          guidance: isAnalysisError(error) ? error.guidance : unexpectedGuidance(error),
-          detail: isAnalysisError(error) ? error.detail : null,
+          guidance,
+          detail: isAnalysisError(error) ? error.detail : (guidance.detail ?? null),
         })
       }
     },

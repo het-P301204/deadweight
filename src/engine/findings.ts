@@ -42,7 +42,9 @@ const PRIVILEGED_ENVIRONMENTS = new Set(['production', 'staging', 'service', 'ci
 export function deriveFindings(input: Input): readonly Finding[] {
   const { artifact, behaviour, sites, contexts, evidence, alternative } = input
   const findings: Finding[] = []
-  const locations = sites.map((s) => `${s.file}:${s.line}`)
+  // Deduplicated: two load sites on one line (`a = load(p); b = load(p)`)
+  // produce the same locator twice, and the UI uses these as React keys.
+  const locations = [...new Set(sites.map((s) => `${s.file}:${s.line}`))]
   const primary = sites[0] ?? null
 
   const add = (
@@ -98,10 +100,10 @@ export function deriveFindings(input: Input): readonly Finding[] {
       const notable = notableGlobals(artifact.pickle.globals)
       if (notable.length > 0) {
         add(
-          'execution-surface',
+          'pickle-notable-callable',
           'review',
           `Pickle stream names ${notable.length} notable callable${notable.length === 1 ? '' : 's'}`,
-          `The opcode scan found ${notable.join(', ')} named in the stream, read without unpickling. This is worth looking at, and its absence would have meant nothing: the reachable set for a pickle is every importable callable in the environment.`,
+          `The opcode scan found ${notable.join(', ')} named in the stream, read without unpickling. Treat this as weak evidence in both directions: its absence means nothing, because the reachable set for a pickle is every importable callable in the environment, and its presence is recovered from the stream without a stack, so a stream not written by a standard pickler can name one callable and resolve another.`,
           [artifact.locator],
         )
       }
@@ -278,6 +280,7 @@ export const FINDING_META: Readonly<
   Record<FindingKind, { label: string; family: 'execution' | 'migration' | 'evidence' | 'unresolved' | 'integrity' }>
 > = {
   'execution-surface': { label: 'Execution surface', family: 'execution' },
+  'pickle-notable-callable': { label: 'Notable callable named', family: 'execution' },
   'privileged-execution-surface': { label: 'Privileged execution surface', family: 'execution' },
   'unpinned-loader-default': { label: 'Unpinned loader default', family: 'execution' },
   'remote-code-trust': { label: 'Remote code trust', family: 'execution' },

@@ -20,7 +20,7 @@
  * this order, from this side of the boundary" is the thing worth saying.
  */
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 import { STAGE_META } from '../engine/stripe.ts'
 import type { ArtifactRecord, StripeStage } from '../engine/types.ts'
@@ -81,6 +81,9 @@ export function LoadBoundary({
 }) {
   const [hovered, setHovered] = useState<string | null>(null)
   const [stage, setStage] = useState<StripeStage | null>(null)
+  // Per instance. A hardcoded id would make a second diagram on the same page
+  // resolve `url(#...)` against the first one's pattern.
+  const hatch = useId()
 
   const shown = useMemo(() => records.slice(0, limit), [records, limit])
   const height = HEADER_HEIGHT + shown.length * ROW_HEIGHT + 22
@@ -96,9 +99,16 @@ export function LoadBoundary({
         aria-label={`Load boundary diagram: ${shown.length} artifacts traced through format, load site, execution behaviour, context, evidence and alternative.`}
       >
         <defs>
-          <pattern id="dw-hatch" width="4" height="4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-            <rect width="4" height="4" fill="rgb(var(--state-unknown) / 0.14)" />
-            <line x1="0" y1="0" x2="0" y2="4" stroke="rgb(var(--state-unknown) / 0.85)" strokeWidth="1.2" />
+          <pattern id={hatch} width="4" height="4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <rect width="4" height="4" style={{ fill: 'rgb(var(--state-unknown) / 0.14)' }} />
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="4"
+              strokeWidth="1.2"
+              style={{ stroke: 'rgb(var(--state-unknown) / 0.85)' }}
+            />
           </pattern>
         </defs>
 
@@ -118,7 +128,7 @@ export function LoadBoundary({
                 y={30}
                 width={STAGE_GAP}
                 height={height - 46}
-                fill={active ? 'rgb(var(--accent) / 0.05)' : 'transparent'}
+                style={{ fill: active ? 'rgb(var(--accent) / 0.05)' : 'transparent' }}
                 className="transition-[fill] duration-220 ease-out"
               />
               <text
@@ -137,7 +147,7 @@ export function LoadBoundary({
                 y1={34}
                 x2={x}
                 y2={height - 20}
-                stroke="rgb(var(--line-1))"
+                style={{ stroke: 'rgb(var(--line-1))' }}
                 strokeWidth="1"
               />
               <line
@@ -145,7 +155,7 @@ export function LoadBoundary({
                 y1={40}
                 x2={x + 5}
                 y2={40}
-                stroke={active ? 'rgb(var(--accent))' : 'rgb(var(--line-2))'}
+                style={{ stroke: active ? 'rgb(var(--accent))' : 'rgb(var(--line-2))' }}
                 strokeWidth="1.5"
               />
             </g>
@@ -158,7 +168,7 @@ export function LoadBoundary({
           y1={14}
           x2={BOUNDARY_X}
           y2={height - 14}
-          stroke="rgb(var(--accent) / 0.55)"
+          style={{ stroke: 'rgb(var(--accent) / 0.55)' }}
           strokeWidth="1"
           strokeDasharray="3 4"
         />
@@ -202,7 +212,7 @@ export function LoadBoundary({
                 y={y - ROW_HEIGHT / 2 + 2}
                 width={WIDTH}
                 height={ROW_HEIGHT - 4}
-                fill={hovered === record.artifact.id ? 'rgb(var(--surface-3) / 0.7)' : 'transparent'}
+                style={{ fill: hovered === record.artifact.id ? 'rgb(var(--surface-3) / 0.7)' : 'transparent' }}
                 rx="4"
                 className="transition-[fill] duration-140"
               />
@@ -236,7 +246,7 @@ export function LoadBoundary({
                   cell.state === 'flagged'
                     ? colour
                     : cell.state === 'unresolved'
-                      ? 'url(#dw-hatch)'
+                      ? `url(#${hatch})`
                       : 'rgb(var(--ink-2) / 0.4)'
                 return (
                   <rect
@@ -246,15 +256,19 @@ export function LoadBoundary({
                     width={NODE_W}
                     height={NODE_H}
                     rx="2"
-                    fill={fill}
-                    stroke={cell.state === 'unresolved' ? 'rgb(var(--state-unknown) / 0.5)' : 'none'}
                     strokeWidth="1"
                     className={animate ? 'dw-node' : undefined}
-                    style={
-                      animate
-                        ? { animationDelay: `${delay + 180 + index * 90}ms`, transformOrigin: `${x}px ${y}px` }
-                        : undefined
-                    }
+                    style={{
+                      fill,
+                      stroke:
+                        cell.state === 'unresolved' ? 'rgb(var(--state-unknown) / 0.5)' : 'none',
+                      ...(animate
+                        ? {
+                            animationDelay: `${delay + 180 + index * 90}ms`,
+                            transformOrigin: `${x}px ${y}px`,
+                          }
+                        : {}),
+                    }}
                   >
                     <title>{`${STAGE_META[cell.stage].label}: ${cell.label}. ${cell.detail}`}</title>
                   </rect>

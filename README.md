@@ -8,7 +8,7 @@ Know what your AI dependencies do when they load.
 [![CI](https://github.com/het-P301204/deadweight/actions/workflows/ci.yml/badge.svg)](https://github.com/het-P301204/deadweight/actions/workflows/ci.yml)
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-5b8def)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-<!-- dw:tests -->296<!-- /dw -->-3ac58d)](src/engine)
+[![Tests](https://img.shields.io/badge/tests-<!-- dw:tests -->308<!-- /dw -->-3ac58d)](src/engine)
 [![Runtime dependencies](https://img.shields.io/badge/CLI%20dependencies-0-3ac58d)](package.json)
 [![Network calls](https://img.shields.io/badge/network%20calls-none-3ac58d)](SECURITY.md)
 
@@ -386,7 +386,7 @@ Full detail, including what is explicitly out of scope, in
 
 ```bash
 npm install
-npm test          # <!-- dw:tests -->296<!-- /dw --> cases over the engine and the design tokens
+npm test          # <!-- dw:tests -->308<!-- /dw --> cases over the engine and the design tokens
 npm run lint
 npm run typecheck
 npm run build

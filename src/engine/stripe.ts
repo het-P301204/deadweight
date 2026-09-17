@@ -104,7 +104,14 @@ export function buildStripe(input: Input): LoadStripe {
       detail:
         sites.length === 1
           ? `Loaded by ${first.loader} at ${first.file}:${first.line}${first.enclosing === null ? '' : ` in ${first.enclosing}`}.`
-          : `Loaded from ${sites.length} places: ${sites.map((s) => `${s.file}:${s.line}`).join(', ')}.`,
+          : // Bounded. This string becomes an `aria-label`, a tooltip body and
+            // an SVG `<title>`; joining every site made it 94,000 characters
+            // for an artifact loaded 5,000 times, which is a row a screen
+            // reader cannot get past.
+            `Loaded from ${sites.length} places, including ${sites
+              .slice(0, 4)
+              .map((s) => `${s.file}:${s.line}`)
+              .join(', ')}${sites.length > 4 ? ', and others' : ''}.`,
     })
   }
 

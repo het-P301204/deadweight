@@ -27,6 +27,7 @@ import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { analyze } from './analyze.ts'
+import { offendingStrings } from './malformed.test.ts'
 import { callSites } from './scan.ts'
 import { memoryTree } from './source.ts'
 import type { MemoryFile } from './source.ts'
@@ -195,6 +196,87 @@ describe('callSites matches the expression it replaced', () => {
     expect([...callSites(source)]).toEqual(expected)
   })
 })
+
+/**
+ * An artifact must not be able to write into DEADWEIGHT's own output.
+ *
+ * A pickle GLOBAL name is bytes the artifact chooses, decoded as latin1, and
+ * they used to reach the report and the terminal verbatim. A stream naming
+ * `ESC[2J ESC[32m### NO EXECUTION SURFACE FOUND ###` therefore cleared the
+ * screen and printed its own green verdict inside the report of a tool whose
+ * entire output is a security verdict. The same name could also run to the
+ * end of the 64 KiB head slice, turning a 64 KiB file into a 65,000-character
+ * line.
+ *
+ * The test that should have caught this asserted on `JSON.stringify(report)`,
+ * which escapes control characters into ASCII, so it could never fail.
+ */
+describe('an artifact cannot forge the report', () => {
+  const ESCAPE = String.fromCharCode(27)
+
+  /** A protocol-4 pickle naming one global, then REDUCE and STOP. */
+  function pickleNaming(module: string, name: string): Uint8Array {
+    const ascii = (text: string): number[] => [...text].map((c) => c.charCodeAt(0) & 0xff)
+    return new Uint8Array([
+      0x80, 0x04, // PROTO 4
+      0x63, ...ascii(module), 0x0a, ...ascii(name), 0x0a, // GLOBAL module\nname\n
+      0x52, // REDUCE
+      0x2e, // STOP
+    ])
+  }
+
+  const loader = { path: 'src/load.py', text: 'import pickle\npickle.load(open("m.pkl","rb"))\n' }
+
+  it('strips an ANSI escape out of a pickle global name', async () => {
+    const report = await analyze(
+      memoryTree('hostile', [
+        { path: 'm.pkl', bytes: pickleNaming(`${ESCAPE}[2J${ESCAPE}[32mNO SURFACE FOUND`, 'system') },
+        loader,
+      ]),
+    )
+    expect(offendingStrings(report)).toEqual([])
+  })
+
+  it('clips a pickle global name that runs the length of the head slice', async () => {
+    const report = await analyze(
+      memoryTree('hostile', [
+        { path: 'm.pkl', bytes: pickleNaming('Q'.repeat(60_000), 'system') },
+        loader,
+      ]),
+    )
+    const longest = longestString(report)
+    expect(longest).toBeLessThan(2000)
+  })
+
+  it('strips control characters out of safetensors metadata, keys included', async () => {
+    // A safetensors file is a little-endian u64 header length, then that many
+    // bytes of JSON.
+    const header = JSON.stringify({
+      __metadata__: { [`${ESCAPE}[31mkey`]: `${ESCAPE}[2Jvalue` },
+      weight: { dtype: 'F32', shape: [1], data_offsets: [0, 4] },
+    })
+    const body = new TextEncoder().encode(header)
+    const bytes = new Uint8Array(8 + body.length + 4)
+    new DataView(bytes.buffer).setBigUint64(0, BigInt(body.length), true)
+    bytes.set(body, 8)
+
+    const report = await analyze(memoryTree('hostile', [{ path: 'm.safetensors', bytes }]))
+    expect(offendingStrings(report)).toEqual([])
+  })
+})
+
+/** Length of the longest string anywhere in a value. */
+function longestString(value: unknown): number {
+  if (typeof value === 'string') return value.length
+  if (Array.isArray(value)) return value.reduce<number>((a, v) => Math.max(a, longestString(v)), 0)
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).reduce(
+      (a, [key, v]) => Math.max(a, key.length, longestString(v)),
+      0,
+    )
+  }
+  return 0
+}
 
 /**
  * No source file may contain a control character.

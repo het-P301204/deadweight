@@ -191,7 +191,36 @@ export function ContextGraph({
       })
     })
 
-    const visibleEdges = edges.filter((e) => shown.has(e.from) && shown.has(e.to))
+    /**
+     * One line per pair, not one per load site.
+     *
+     * Three edges were pushed for every load site with no deduplication, and
+     * while the node count is capped at `MAX_PER_COLUMN`, the edge count was
+     * not: an artifact loaded 5,000 times from one file drew four nodes and
+     * 15,000 `<path>` elements, every one of them between the same two
+     * points. The graph only ever shows one line per pair, so collapsing them
+     * changes nothing on screen and bounds the work by the node count.
+     *
+     * Where sites between one pair disagree about behaviour, the most exposed
+     * wins, matching how the headline verdict is chosen elsewhere.
+     */
+    const visibleEdges = [
+      ...edges
+        .filter((e) => shown.has(e.from) && shown.has(e.to))
+        .reduce((unique, edge) => {
+          // A two-element array rather than a joined string: any separator
+          // character could legitimately appear in a file path.
+          const key = JSON.stringify([edge.from, edge.to])
+          const seen = unique.get(key)
+          // Lower `EXPOSURE` is more exposed in this module, matching `add`
+          // above, which takes the more exposed colour for a shared node.
+          if (seen === undefined || EXPOSURE[edge.behaviour] < EXPOSURE[seen.behaviour]) {
+            unique.set(key, edge)
+          }
+          return unique
+        }, new Map<string, (typeof edges)[number]>())
+        .values(),
+    ]
 
     // Adjacency in both directions, for the connected-component highlight.
     const neighbours = new Map<string, Set<string>>()
@@ -307,11 +336,12 @@ export function ContextGraph({
                   width={at.w}
                   height={NODE_H}
                   rx="3"
-                  fill={
-                    focus === node.id ? 'rgb(var(--surface-3))' : 'rgb(var(--surface-2) / 0.8)'
-                  }
-                  stroke={focus === node.id ? colour : 'rgb(var(--line-2))'}
                   strokeWidth="1"
+                  style={{
+                    fill:
+                      focus === node.id ? 'rgb(var(--surface-3))' : 'rgb(var(--surface-2) / 0.8)',
+                    stroke: focus === node.id ? colour : 'rgb(var(--line-2))',
+                  }}
                   className="transition-all duration-140"
                 />
                 {/* a rule in the behaviour colour, so the column reads at a glance */}
@@ -328,7 +358,7 @@ export function ContextGraph({
                     x={at.x + at.w - 8}
                     y={at.y + 16}
                     textAnchor="end"
-                    fill="rgb(var(--state-code))"
+                    style={{ fill: 'rgb(var(--state-code))' }}
                     className="font-mono text-[9px]"
                   >
                     &#9650;

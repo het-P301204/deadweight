@@ -25,7 +25,7 @@ import type { ModelBom } from '../src/engine/bom.ts'
 import { ENVIRONMENT_META } from '../src/engine/context.ts'
 import { toCycloneDx } from '../src/engine/cyclonedx.ts'
 import { diffBoms, diffToText } from '../src/engine/diff.ts'
-import { AnalysisError, isAnalysisError } from '../src/engine/errors.ts'
+import { AnalysisError, isAnalysisError, unexpectedGuidance } from '../src/engine/errors.ts'
 
 import { formatSpec } from '../src/engine/formats.ts'
 import { canonicalJson } from '../src/engine/hash.ts'
@@ -719,8 +719,15 @@ try {
     if (error.detail !== null) process.stderr.write(`  ${style.dim(error.detail)}\n`)
     process.stderr.write('\n')
   } else {
-    process.stderr.write(`\n  ${style.red('The analysis stopped unexpectedly.')}\n`)
-    process.stderr.write(`  ${error instanceof Error ? error.message : String(error)}\n\n`)
+    // Through the same guidance contract as every other failure, which
+    // sanitises the underlying message. Writing `error.message` straight to
+    // the terminal put both host paths and analysed-repository bytes there.
+    const guidance = unexpectedGuidance(error)
+    process.stderr.write(`\n  ${style.red(guidance.what)}\n`)
+    process.stderr.write(`  ${style.dim(guidance.why)}\n`)
+    process.stderr.write(`  ${guidance.fix}\n`)
+    if (guidance.detail !== undefined) process.stderr.write(`  ${style.dim(guidance.detail)}\n`)
+    process.stderr.write('\n')
   }
   process.exitCode = 1
 }

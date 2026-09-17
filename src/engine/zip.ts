@@ -13,7 +13,16 @@
  * record, and every offset is validated against the slice actually in hand.
  */
 
-import { MAX_ZIP_ENTRIES } from './limits.ts'
+import { MAX_IDENTIFIER_CHARS, MAX_ZIP_ENTRIES, clip, sanitise } from './limits.ts'
+
+/**
+ * A member name as it will be reported. Same reasoning as the pickle reader:
+ * these bytes are chosen by the archive, and a name carrying an ANSI escape
+ * or running to the end of the slice must not reach a report or a terminal.
+ */
+function reportable(text: string): string {
+  return clip(sanitise(text), MAX_IDENTIFIER_CHARS)
+}
 
 export interface ZipEntry {
   readonly name: string
@@ -68,7 +77,14 @@ export function listZip(tail: Uint8Array, tailOffset: number): ZipListing {
   const dirOffset = u32(tail, eocd + 16)
   const start = dirOffset - tailOffset
 
-  if (start < 0 || start >= tail.length) return { entries: [], partial: true }
+  // `Number.isInteger` rather than just the range check: a NaN `start` makes
+  // both comparisons false, so the guard passed and the loop bound `at + 46 >
+  // tail.length` was false too. Nothing in the tree can reach that today --
+  // `classifyArtifact` always passes a literal offset -- but this is exported
+  // engine API and the guard should not depend on a caller being careful.
+  if (!Number.isInteger(start) || start < 0 || start >= tail.length) {
+    return { entries: [], partial: true }
+  }
 
   const entries: ZipEntry[] = []
   let at = start
@@ -93,7 +109,7 @@ export function listZip(tail: Uint8Array, tailOffset: number): ZipListing {
       partial = true
       break
     }
-    const name = UTF8.decode(tail.subarray(nameStart, nameStart + nameLength))
+    const name = reportable(UTF8.decode(tail.subarray(nameStart, nameStart + nameLength)))
     entries.push({ name, compressedSize, uncompressedSize })
     at = nameStart + nameLength + extraLength + commentLength
   }
@@ -129,7 +145,7 @@ export function listZipFromHead(head: Uint8Array): readonly string[] {
     const compressedSize = u32(head, at + 18)
     const nameStart = at + 30
     if (nameStart + nameLength > head.length) break
-    names.push(UTF8.decode(head.subarray(nameStart, nameStart + nameLength)))
+    names.push(reportable(UTF8.decode(head.subarray(nameStart, nameStart + nameLength))))
     // A streamed archive writes sizes to a trailing data descriptor and zero
     // here, so walking forward stops being reliable; the caller still has the
     // first name, which is the one that identifies the archive kind.

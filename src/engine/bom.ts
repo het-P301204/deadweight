@@ -249,7 +249,9 @@ function csvCell(value: string): string {
 
 /** A one-line-per-artifact summary for a terminal or a commit message. */
 export function bomToText(bom: ModelBom): string {
-  const width = Math.max(...bom.entries.map((e) => e.locator.length), 8)
+  // reduce, not a spread: `Math.max(...)` over 40,000 entries is an argument
+  // list long enough to overflow the stack.
+  const width = bom.entries.reduce((wide, e) => Math.max(wide, e.locator.length), 8)
   const lines = bom.entries.map((entry) => {
     const environments =
       entry.contexts.length === 0

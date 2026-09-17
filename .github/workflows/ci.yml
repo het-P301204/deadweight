@@ -159,8 +159,13 @@ jobs:
 
       - name: Assert nothing about an analysed project can leave the page
         run: |
-          if grep -rEl "fetch\(|XMLHttpRequest|navigator\.sendBeacon|new WebSocket|EventSource" dist/assets/*.js; then
-            echo "::error::The built bundle references a network API. DEADWEIGHT analyses a codebase in the tab and nothing may leave it."
+          # RTCPeerConnection is on this list for a reason worth stating: it is
+          # the one channel `connect-src 'none'` does not govern, because no
+          # CSP directive covers WebRTC. Workers and importScripts *are*
+          # blocked at runtime by `default-src 'none'`, but a grep that only
+          # catches what the policy already stops is not adding anything.
+          if grep -rEl "fetch\(|XMLHttpRequest|navigator\.sendBeacon|new WebSocket|EventSource|RTCPeerConnection|WebTransport|importScripts|new Worker|SharedWorker" dist/assets/*.js; then
+            echo "::error::The built bundle references a network or worker API. DEADWEIGHT analyses a codebase in the tab and nothing may leave it."
             exit 1
           fi
           if grep -rE "https?://[^\"')]*\.(woff2?|ttf|otf|css)" dist/assets/*.css; then
