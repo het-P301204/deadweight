@@ -1,0 +1,256 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------------ */
+/* Tokens                                                                     */
+/*                                                                            */
+/* Dark is the primary identity: a near-black instrument surface where the    */
+/* only saturated pixels on screen are state. Light is specified              */
+/* independently -- the accents are darkened for contrast against paper       */
+/* rather than reused, and the surface stack runs the other way (paper is     */
+/* lightest at the base, panels lift by getting a border rather than by       */
+/* getting brighter).                                                         */
+/* ------------------------------------------------------------------------ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface-0: 10 12 16; /* #0A0C10 page */
+  --surface-1: 16 19 26; /* #10131A panels */
+  --surface-2: 21 25 34; /* #151922 rows, raised */
+  --surface-3: 27 32 43; /* #1B202B hover, inputs */
+  --surface-inset: 7 9 12; /* wells, code blocks */
+
+  --line-1: 31 37 49;
+  --line-2: 44 52 67;
+  --line-3: 66 78 98;
+
+  /* Four text tiers, every one of them at WCAG AA against the *lightest*
+     surface any of them sits on -- `--surface-3`, the hovered row -- rather
+     than only against the page, because a row that fails contrast on hover
+     fails when it is being read.
+
+     The first pass put ink-3 at 2.54:1. A fourth tier nobody can read is
+     decoration, not hierarchy, so the whole ramp moved up and ink-3 landed
+     roughly where ink-2 had been. Measured against --surface-3:
+     13.4 / 9.5 / 6.9 / 4.6. */
+  --ink-0: 240 244 249;
+  --ink-1: 186 196 210;
+  --ink-2: 158 170 188;
+  --ink-3: 124 137 157;
+
+  --accent: 86 182 240;
+  --accent-strong: 146 212 250;
+  --accent-dim: 32 86 124;
+
+  --state-code: 232 94 92;
+  --state-directive: 166 133 244;
+  --state-guarded: 122 209 174;
+  --state-data: 58 197 141;
+  --state-unknown: 226 166 74;
+
+  --shadow-alpha-1: 0.5;
+  --shadow-alpha-2: 0.7;
+
+  --grid-line: 255 255 255;
+  --grid-alpha: 0.022;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Paper, then white panels on it, then a perceptibly cooler grey for rows
+     and hover. The first pass had surface-2 one step off white, which made a
+     hovered row and a raised surface indistinguishable from the panel. */
+  --surface-0: 243 246 250;
+  --surface-1: 255 255 255;
+  --surface-2: 246 249 252;
+  --surface-3: 236 241 247;
+  --surface-inset: 241 245 249;
+
+  --line-1: 225 230 237;
+  --line-2: 205 213 224;
+  --line-3: 168 180 196;
+
+  /* The same discipline on paper, measured against the darkest surface
+     text sits on, --surface-3: 15.4 / 8.9 / 6.6 / 5.0. */
+  --ink-0: 13 17 23;
+  --ink-1: 56 68 84;
+  --ink-2: 74 86 104;
+  --ink-3: 92 104 122;
+
+  --accent: 11 108 176;
+  --accent-strong: 8 84 138;
+  --accent-dim: 176 212 238;
+
+  /* Darkened from the first pass: the green was 4.26:1 on the hovered row.
+     Guarded is a darker teal rather than a neighbouring green: the first
+     attempt at differentiating by hue alone left the two within 1.03:1 of
+     each other in luminance, which is exactly the pair a reader who cannot
+     separate green from green sees as one colour. */
+  --state-code: 189 44 52;
+  --state-directive: 104 61 199;
+  --state-guarded: 13 100 100;
+  --state-data: 10 118 78;
+  --state-unknown: 150 94 6;
+
+  --shadow-alpha-1: 0.08;
+  --shadow-alpha-2: 0.16;
+
+  --grid-line: 13 17 23;
+  --grid-alpha: 0.03;
+}
+
+@layer base {
+  * {
+    border-color: rgb(var(--line-1));
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface-0 text-ink-0 font-sans text-base antialiased;
+    font-feature-settings: 'cv05' 1, 'ss03' 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Figures in tables, counters and stripes must line up column to column. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.28);
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* Only the scrollable regions get a visible bar, and it stays out of the
+     way until the region is hovered. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-2)) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: rgb(var(--line-2));
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  .scroll-thin:hover::-webkit-scrollbar-thumb {
+    background: rgb(var(--line-3));
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* The faint engineering grid behind the signature diagram. It is structure,
+     not decoration: the stage columns land on it. */
+  .grid-field {
+    background-image:
+      linear-gradient(rgb(var(--grid-line) / var(--grid-alpha)) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--grid-line) / var(--grid-alpha)) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* A scroll region the reader drags or swipes, where a visible bar is
+     noise rather than affordance. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      currentColor 0 1px,
+      transparent 1px 4px
+    );
+  }
+
+  /* The signature diagram's two animations. `pathLength="1"` on the path
+     makes the dash arithmetic independent of the actual line length, so a
+     short trace and a long one draw at the same speed. */
+  .dw-trace {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: dw-trace 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .dw-node {
+    animation: dw-node 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes dw-trace {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes dw-node {
+    from {
+      opacity: 0;
+      transform: scaleY(0.3);
+    }
+    to {
+      opacity: 1;
+      transform: scaleY(1);
+    }
+  }
+
+  /* One-line clamp that survives flex children collapsing. */
+  .truncate-flex {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Reduced motion                                                             */
+/*                                                                            */
+/* Animation in DEADWEIGHT carries meaning -- a stage resolving, an artifact  */
+/* entering a BOM, a path lighting up. Under `prefers-reduced-motion` the     */
+/* motion becomes a fast cross-fade instead of vanishing, so the same state   */
+/* change is still announced, just without travel.                            */
+/* ------------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 90ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .motion-fade {
+    animation: fade-in 120ms linear both !important;
+  }
+}

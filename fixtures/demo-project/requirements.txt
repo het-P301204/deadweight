@@ -1,0 +1,29 @@
+# Synthetic. See README.md.
+#
+# torch is the interesting line: `>=2.0` permits versions on both sides of
+# 2.6, where the default for `weights_only` changed. Every unguarded
+# torch.load in this project is therefore unresolvable rather than safe.
+torch>=2.0
+torchvision>=0.15
+
+transformers==4.44.2
+safetensors==0.4.5
+sentence-transformers==3.0.1
+datasets==2.21.0
+
+numpy==2.1.1
+scikit-learn==1.5.2
+joblib==1.4.2
+pandas==2.2.2
+
+onnxruntime==1.19.2
+llama-cpp-python==0.3.1
+
+# Keras 2, which deserialises Lambda-layer bytecode when rebuilding a model.
+keras==2.15.0
+tensorflow==2.15.1
+
+pyyaml>=5.4
+fastapi==0.115.0
+uvicorn==0.30.6
+boto3==1.35.24

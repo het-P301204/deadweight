@@ -1,0 +1,25 @@
+# Which paths run where.
+#
+# DEADWEIGHT can see that src/serving/api.py builds a FastAPI app. It cannot
+# see whether that app is deployed, or with what. Declaring it here is what
+# turns an inferred "service" into a stated "production", and the product shows
+# which of the two every context came from.
+#
+# src/pipeline/** and src/detect/** are deliberately left out: they come back
+# as unresolved, which is the honest answer and not a green one.
+
+environments:
+  production:
+    - src/serving/**
+    - src/agents/**
+    - src/detect/**
+  build:
+    - scripts/**
+  ci:
+    - .github/scripts/**
+  sandbox:
+    - examples/**
+    - tools/**
+
+ignore:
+  - vendor/**

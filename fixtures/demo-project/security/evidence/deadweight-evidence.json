@@ -1,0 +1,38 @@
+{
+  "schema": "deadweight.evidence/1",
+  "note": "Synthetic evidence for the demo project. Not a real scan.",
+  "records": [
+    {
+      "scanner": "picklescan",
+      "version": "0.0.23",
+      "subject": "weights/classifier.pkl",
+      "sha256": "e90991bb2641a49e3cc1aaaacb699081f54c35b3d05dfb0ff285c4f0b72d5172",
+      "result": "flagged",
+      "detail": "Denylisted global found in the opcode stream: os.system."
+    },
+    {
+      "scanner": "modelscan",
+      "version": "0.8.4",
+      "subject": "weights/ranker.bin",
+      "sha256": "6d7992788ff801515f058f448e69869fa9ee369e0d9ebff0218bab5e1854004e",
+      "result": "pass",
+      "detail": "No issue reported against the scanner’s known-dangerous import list."
+    },
+    {
+      "scanner": "modelscan",
+      "version": "0.8.4",
+      "subject": "models/encoder.safetensors",
+      "sha256": "d93b1f2037b6e5a7f8204833d04c457934f55baabbdb10d13b544db942971c06",
+      "result": "pass",
+      "detail": "safetensors header parsed; no pickle stream present."
+    },
+    {
+      "scanner": "fickling",
+      "version": "0.1.3",
+      "subject": "weights/classifier.pkl",
+      "sha256": "e90991bb2641a49e3cc1aaaacb699081f54c35b3d05dfb0ff285c4f0b72d5172",
+      "result": "flagged",
+      "detail": "The pickle program calls an imported function with an attacker-controlled argument."
+    }
+  ]
+}

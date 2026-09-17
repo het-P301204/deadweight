@@ -1,0 +1,34 @@
+{
+  "modelscan_version": "0.8.4",
+  "input_path": ".",
+  "summary": {
+    "total_issues": 1,
+    "scanned": {
+      "total_scanned": 3,
+      "scanned_files": [
+        "weights/classifier.pkl",
+        "models/segmenter.ts.pt",
+        "models/report.keras"
+      ]
+    },
+    "skipped": {
+      "total_skipped": 1,
+      "skipped_files": [
+        {
+          "source": "models/pipeline.joblib",
+          "category": "SCAN_NOT_SUPPORTED"
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "description": "Use of unsafe operator",
+      "operator": "system",
+      "module": "os",
+      "source": "weights/classifier.pkl",
+      "scanner": "modelscan.scanners.PickleUnsafeOpScan",
+      "severity": "CRITICAL"
+    }
+  ]
+}

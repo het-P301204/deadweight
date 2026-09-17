@@ -1,0 +1,3 @@
+environmnts:
+  production:
+    - src/**

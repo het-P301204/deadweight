@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DEADWEIGHT — AI model &amp; skill supply-chain analyzer</title>
+    <meta
+      name="description"
+      content="Know what your AI dependencies do when they load. DEADWEIGHT resolves the format, load site, load behaviour, context, evidence and safe alternative for every AI artifact a codebase loads — without ever deserialising one."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0A0C10" />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+
+    <!--
+      The analysis runs entirely in this page. The policy below is enforced by
+      the browser rather than only claimed in a README: `connect-src 'none'`
+      means this page cannot make a request even if a future change tried to,
+      and nothing may be loaded from any origin but this one.
+
+      `style-src 'unsafe-inline'` is needed because the app sets a handful of
+      computed inline styles -- an animation delay per trace, a matrix cell's
+      colour mix, a distribution bar's width. Those are numbers produced by the
+      analysis, never text taken from an analysed file.
+
+      `frame-ancestors` is deliberately absent. A browser ignores it when it
+      arrives in a meta element, so claiming it here would be theatre; it
+      belongs in a response header, and SECURITY.md says which one.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'"
+    />
+
+    <style>
+      /* Painted before the bundle parses, so the first frame is not white. */
+      html {
+        background: #0a0c10;
+      }
+      html[data-theme='light'] {
+        background: #f3f6fa;
+      }
+      #root:empty::after {
+        content: '';
+        display: block;
+        height: 100vh;
+      }
+    </style>
+
+    <!--
+      Deliberately not `type="module"`, which Vite will warn about. A module
+      script is deferred, and a deferred theme bootstrap runs after first paint
+      -- which is the one thing this tag exists to prevent. It is a separate
+      file rather than inline so the policy can be `script-src 'self'` with
+      no `unsafe-inline` and no hash to keep in sync.
+    -->
+    <script src="./theme.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 48px; font-family: system-ui, sans-serif; color: #f0f4f9">
+        <h1 style="font-size: 20px; margin: 0 0 12px">DEADWEIGHT needs JavaScript</h1>
+        <p style="max-width: 46em; line-height: 1.6; color: #a9b4c4; margin: 0 0 12px">
+          The analysis runs in this page rather than on a server, which is what keeps your codebase
+          in your browser. There is no server-rendered equivalent because there is no server.
+        </p>
+        <p style="max-width: 46em; line-height: 1.6; color: #a9b4c4; margin: 0">
+          The command line tool does the same work with no browser at all:
+          <code style="font-family: ui-monospace, monospace">node bin/deadweight.ts scan .</code>
+        </p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

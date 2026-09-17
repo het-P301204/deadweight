@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ticket-store": {
+      "command": "npx",
+      "args": ["-y", "@atlas-internal/mcp-ticket-store@latest"],
+      "env": {
+        "ATLAS_TICKET_TOKEN": "${ATLAS_TICKET_TOKEN}"
+      }
+    },
+    "runbook-search": {
+      "type": "http",
+      "url": "https://runbooks.atlas.invalid/mcp"
+    }
+  }
+}

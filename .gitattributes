@@ -1,0 +1,16 @@
+# Text files get LF in the repository regardless of the checkout platform, so
+# the generated-artifact checks in CI compare the same bytes everywhere.
+* text=auto eol=lf
+
+# The binary fixtures are exact byte sequences the format classifier has to
+# recognise. Line-ending translation would corrupt every one of them.
+fixtures/demo-project/weights/** binary
+fixtures/demo-project/models/** binary
+fixtures/malformed/weights/** binary
+*.png binary
+*.woff2 binary
+
+# Generated, and verified against its generator by CI. Collapsed in review.
+src/demo-tree.generated.ts linguist-generated=true
+public/40*.html linguist-generated=true
+public/500.html linguist-generated=true

@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // The CLI runs the engine's `.ts` sources directly through Node's native
+    // type stripping, with no build step and no dependencies. That imposes
+    // three rules on everything the CLI can reach: import specifiers carry
+    // their real `.ts` extension, type-only imports are marked `import type`
+    // so they erase on sight, and no TypeScript construct that needs a runtime
+    // emit appears anywhere in the graph -- no `enum`, no `namespace`, and no
+    // constructor parameter properties.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src", "bin", "scripts", "vite.config.ts", "vitest.config.ts", "eslint.config.js"],
+
+  // The screenshot capture is an optional developer tool that imports
+  // Playwright, which is deliberately not a dependency of this project:
+  // nothing in the test suite, the build or CI needs a browser. It is
+  // excluded from the typecheck rather than pulling 300 MB of browser
+  // binaries into every install.
+  "exclude": ["scripts/screenshots.ts"]
+}
