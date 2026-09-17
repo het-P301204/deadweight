@@ -186,7 +186,68 @@ const PY_IMPORT = /^[ \t]*import[ \t]+([^\n#]+)$/gm
 const PY_FROM = /^[ \t]*from[ \t]+([A-Za-z_][\w.]*)[ \t]+import[ \t]+([^\n#]+)$/gm
 const PY_DEF = /^([ \t]*)(?:async[ \t]+)?def[ \t]+([A-Za-z_]\w*)/gm
 const PY_CLASS = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)/gm
-const CALL = /([A-Za-z_][\w.]*)[ \t]*\(/g
+/* -------------------------------------------------------------------------- */
+/* Finding calls                                                              */
+/* -------------------------------------------------------------------------- */
+
+/** `[A-Za-z0-9_.]`, by code point. Called once per character of every file. */
+function isNameChar(code: number): boolean {
+  return (
+    (code >= 97 && code <= 122) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 48 && code <= 57) ||
+    code === 95 ||
+    code === 46
+  )
+}
+
+/** `[A-Za-z_]`. A name may not begin with a digit or a dot. */
+function isNameStart(code: number): boolean {
+  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95
+}
+
+export interface CallSite {
+  /** Index of the first character of the name. */
+  readonly index: number
+  /** The dotted expression being called, exactly as written. */
+  readonly name: string
+  /** Index of the opening bracket. */
+  readonly open: number
+}
+
+/**
+ * Every `name(` in masked source, left to right.
+ *
+ * This was one regular expression -- `/([A-Za-z_][\w.]*)[ \t]*\(/g` -- and it
+ * was quadratic in the length of a line. At each starting position the engine
+ * consumed the whole run of name characters, failed to find a bracket, and
+ * handed the characters back one at a time; then it advanced one position and
+ * did it again. Measured: 69 ms for a 10,000-character line, 17 s at 160,000,
+ * and about three quarters of an hour for the 2 MB line that `MAX_SOURCE_BYTES`
+ * permits. A minified bundle committed to a repository was therefore enough to
+ * hang the analyser on that repository -- a denial of service delivered by the
+ * thing being analysed, which is the one class of bug this product cannot have.
+ *
+ * Finding the bracket first and walking backwards over the name is linear in
+ * the file. It accepts exactly what the expression accepted, including that
+ * spaces and tabs may sit between a name and its bracket, and that `1foo(`
+ * and `.foo(` are both calls to `foo`.
+ */
+export function* callSites(source: string): Generator<CallSite> {
+  for (let open = source.indexOf('('); open !== -1; open = source.indexOf('(', open + 1)) {
+    let at = open
+    while (at > 0) {
+      const code = source.charCodeAt(at - 1)
+      if (code !== 32 && code !== 9) break
+      at -= 1
+    }
+    let start = at
+    while (start > 0 && isNameChar(source.charCodeAt(start - 1))) start -= 1
+    while (start < at && !isNameStart(source.charCodeAt(start))) start += 1
+    if (start === at) continue
+    yield { index: start, name: source.slice(start, at), open }
+  }
+}
 const PY_ASSIGN = /^[ \t]*([A-Za-z_]\w*)[ \t]*=[ \t]*([^\n#][^\n]*)$/gm
 const PY_WITH =
   /\bwith[ \t]+((?:open|io\.open|gzip\.open|bz2\.open|lzma\.open)[ \t]*\([^\n]*?\))[ \t]+as[ \t]+([A-Za-z_]\w*)/gm
@@ -543,9 +604,8 @@ export function scanPython(file: string, text: string): ScanResult {
   const bindings = bindingsOf(masked)
   const calls: RawCall[] = []
 
-  CALL.lastIndex = 0
-  for (const match of masked.masked.matchAll(CALL)) {
-    const expression = match[1] as string
+  for (const site of callSites(masked.masked)) {
+    const expression = site.name
     const segments = expression.split('.')
     const last = segments[segments.length - 1] as string
     // Cheap reject first. A bare name is only worth resolving when it is one a
@@ -557,14 +617,14 @@ export function scanPython(file: string, text: string): ScanResult {
     const loaderId = matchLoader(canonical, 'python')
     if (loaderId === null) continue
 
-    const open = (match.index ?? 0) + (match[0] as string).length - 1
+    const open = site.open
     const close = matchBracket(masked.masked, open)
     if (close === -1) continue
 
     const rule = LOADER_TARGETS.get(loaderId)
     const args = readArguments(masked, open, close)
     const target = rule ? pickTarget(args, rule.positions, rule.keywords) : null
-    const index = match.index ?? 0
+    const index = site.index
 
     calls.push({
       file,
@@ -673,9 +733,8 @@ export function scanJs(file: string, text: string): ScanResult {
     if (name) functions.push({ indent: 0, name, index: match.index ?? 0 })
   }
 
-  CALL.lastIndex = 0
-  for (const match of masked.masked.matchAll(CALL)) {
-    const expression = match[1] as string
+  for (const site of callSites(masked.masked)) {
+    const expression = site.name
     const segments = expression.split('.')
     const last = segments[segments.length - 1] as string
     if (!BARE_NAMES.has(last)) continue
@@ -684,14 +743,14 @@ export function scanJs(file: string, text: string): ScanResult {
     const loaderId = matchLoader(canonical, 'javascript')
     if (loaderId === null) continue
 
-    const open = (match.index ?? 0) + (match[0] as string).length - 1
+    const open = site.open
     const close = matchBracket(masked.masked, open)
     if (close === -1) continue
 
     const rule = LOADER_TARGETS.get(loaderId)
     const args = readArguments(masked, open, close)
     const target = rule ? pickTarget(args, rule.positions, rule.keywords) : null
-    const index = match.index ?? 0
+    const index = site.index
 
     let enclosing: string | null = null
     for (const fn of functions) {

@@ -18,6 +18,8 @@ import { walkDirectory } from '../src/adapters/node-tree.ts'
 import { analyze } from '../src/engine/analyze.ts'
 import { buildBom } from '../src/engine/bom.ts'
 import { ENVIRONMENT_META, ENVIRONMENT_ORDER } from '../src/engine/context.ts'
+import { allFormats } from '../src/engine/formats.ts'
+import { LOADER_RULES } from '../src/engine/loaders.ts'
 import { BEHAVIOUR_LABEL } from '../src/engine/stripe.ts'
 import { matrixKey } from '../src/engine/summary.ts'
 import { LOAD_BEHAVIOURS } from '../src/engine/types.ts'
@@ -56,12 +58,33 @@ const figures: Record<string, string> = {
   environments: String(Object.values(report.summary.environments).filter((n) => n > 0).length),
   bomentries: String(bom.entries.length),
   tests: await countTests(),
+  loaders: String(LOADER_RULES.length),
+  formatcount: String(allFormats().length),
+  ...(await ciSteps()),
 
   // Two multi-line blocks. The marker regex allows newlines, so a whole code
   // block can be generated -- which matters more than the single figures: a
   // stale example of the tool's own output is the most embarrassing kind.
   matrix: renderMatrix(),
   stages: await renderStages(),
+}
+
+/**
+ * How many CI steps there are, and how many of them assert a product claim.
+ *
+ * The README says CI checks the claims rather than only building. That is a
+ * claim about CI, so it is counted from the workflow rather than typed: the
+ * assertion steps are the ones whose name begins with "Assert", which is the
+ * convention the file already follows.
+ */
+async function ciSteps(): Promise<{ cisteps: string; ciasserts: string }> {
+  const workflow = await readFile(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')
+  const names = [...workflow.matchAll(/^ {6}- name: (.+)$/gm)].map((m) => (m[1] as string).trim())
+  const uses = [...workflow.matchAll(/^ {6}- uses: /gm)].length
+  return {
+    cisteps: String(names.length + uses),
+    ciasserts: String(names.filter((name) => name.startsWith('Assert')).length),
+  }
 }
 
 /** The behaviour x context table, exactly as the product computes it. */

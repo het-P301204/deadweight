@@ -16,6 +16,9 @@ import { memoryTree } from './source.ts'
 import type { MemoryFile } from './source.ts'
 import type { Report } from './types.ts'
 
+/** The escape byte, built from its code point so this file stays readable. */
+const ESCAPE = String.fromCharCode(27)
+
 const REQUIREMENTS = 'torch==2.5.1\ntransformers==4.44.2\nsafetensors==0.4.5\nnumpy==2.1.1\n'
 
 function tree(files: MemoryFile[]) {
@@ -400,8 +403,10 @@ describe('malformed and hostile input', () => {
       path: 'security/x.evidence.json',
       text: '{"__proto__":{"polluted":true},"records":[{"subject":"weights/empty.pt","result":"pass"}]}',
     },
-    // A filename with an ANSI escape in it.
-    { path: 'weights/we[31mird.pkl', bytes: new Uint8Array([0x80, 4, 0x2e]) },
+    // A filename with an ANSI escape in it. The escape byte is built from
+    // its code point rather than embedded, so that this file stays readable
+    // in a diff and a reviewer can see what is being tested.
+    { path: `weights/we${ESCAPE}[31mird.pkl`, bytes: new Uint8Array([0x80, 4, 0x2e]) },
   ]
 
   it('analyses a tree of malformed artifacts without throwing', async () => {
@@ -416,7 +421,7 @@ describe('malformed and hostile input', () => {
   it('strips control characters out of a filename before it reaches a report', async () => {
     const report = await analyze(memoryTree('hostile', hostile))
     const serialised = JSON.stringify(report)
-    expect(serialised).not.toContain('')
+    expect(serialised).not.toContain(ESCAPE)
   })
 
   it('reports the empty and truncated artifacts rather than dropping them', async () => {

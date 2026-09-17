@@ -71,12 +71,48 @@ every AI artifact it loads: what happens when it is loaded?
   `prefers-reduced-motion` reducing motion to a cross-fade rather than
   removing the state change.
 
+### Hardening
+
+Found by an adversarial pass over the untrusted-input paths before the first
+release, and each one now has a regression test.
+
+- **Denial of service through a long line.** The expression that found call
+  sites, `/([A-Za-z_][\w.]*)[ \t]*\(/g`, backtracked quadratically over runs
+  of name characters: 69 ms for a 10,000-character line, 17 s at 160,000, and
+  roughly three quarters of an hour for the 2 MB line that `MAX_SOURCE_BYTES`
+  permits. One minified bundle committed to a repository was enough to hang
+  the analyser on that repository. Call finding is now a linear scan that
+  locates the bracket and walks backwards over the name, checked against the
+  expression it replaced on 28 inputs.
+- **Denial of service through many load sites.** Resolving a reference
+  scanned every path in the tree and materialised the key list to do it, and
+  the same reference was resolved twice — once to discover artifacts, once to
+  bind sites. 7.9 s for sixteen thousand sites, 51 s for forty thousand. Now
+  bucketed by final path segment and memoised: 0.65 s and 1.7 s.
+- **Sibling lookup walked the whole tree per artifact.** Now indexed by
+  directory and stem.
+- **A malformed BOM reached `diffBoms` and produced a TypeError message.**
+  `{"entries":[null]}` printed `Cannot read properties of null (reading
+  'id')`. Every field the differ reads is now checked, and the failure is the
+  same four-part guidance as every other refusal, naming the entry and field.
+  A size bound was added to match every other read in the project.
+- **Three literal control characters were embedded in source.** `FILLER` was
+  a raw U+0001, so the line read `FILLER = ''` and looked like an empty
+  string; the NUL check in the path normaliser was a raw NUL, which made the
+  file *binary* to `git`, `grep` and GitHub's blob viewer; and the
+  malformed-corpus test embedded NUL and escape bytes in a character class.
+  All are built from code points now, and a test walks every source file to
+  keep it that way.
+
 ### Verification
 
-<!-- dw:tests -->258<!-- /dw --> tests across the engine and the design
-tokens. CI asserts the product's claims rather than only that it
-builds: no clock or randomness in the engine, an identical digest across two
-runs, no network API in the bundle, no browser global in the engine, no
-deserialising call in the analysis path, every generated artifact matching
-its generator, every loader rule resolving to a documented section, and the
-exit codes behaving as documented.
+<!-- dw:tests -->296<!-- /dw --> tests across the engine and the design
+tokens. <!-- dw:ciasserts -->14<!-- /dw --> of CI's
+<!-- dw:cisteps -->21<!-- /dw --> steps assert the product's claims rather
+than only that it builds: no clock or randomness in the engine, an identical
+digest across two runs, no network API in the bundle, no browser global in
+the engine, no deserialising call in the analysis path, every generated
+artifact matching its generator, every loader rule resolving to a documented
+section, a deliberately hostile tree analysing inside a time budget, a
+malformed BOM getting guidance rather than a stack trace, and the exit codes
+behaving as documented.

@@ -64,6 +64,30 @@ can point at it rather than paraphrase it.
 | Line length | 4000 | |
 | Lines per file | 60 000 | |
 
+### Bounds are necessary and not sufficient
+
+A limit caps how much input reaches the analysis. It says nothing about how
+much *work* that input can cause, and the gap between the two is where the
+real denial of service lived.
+
+A 2 MB source file is inside the limit above, so it gets read. When the whole
+file is one line — a minified bundle, which is an ordinary thing to find in a
+repository — the expression that used to find call sites backtracked
+quadratically over the run of name characters: measured at 69 ms for a
+10,000-character line, 17 s at 160,000, and roughly three quarters of an hour
+at 2 MB. Two more scans were quadratic in the same way: resolving a load
+target walked every path in the tree, and sibling lookup walked it again per
+artifact, so forty thousand load sites took 51 seconds.
+
+All three are linear now — the bracket is found first and the name walked
+backwards, and both lookups are indexed — and the property is tested rather
+than asserted. `src/engine/hostile.test.ts` times nine adversarial trees
+against a budget, and CI builds a hostile directory on the runner and fails
+if the analysis takes longer than 90 seconds, which is about a hundred times
+what it now costs. The rewrite is also checked against the expression it
+replaced on 28 inputs, because a rewrite for speed that changes what is found
+would be a worse bug than the one it fixed.
+
 ## Input handling
 
 **Paths are refused, not repaired.** A path containing `..`, an absolute form,
@@ -91,6 +115,14 @@ parse result. Covered by a test that asserts nothing landed on
 from a small dialect with no backtracking constructs. A catastrophically
 backtracking pattern in a config file would be a denial of service against
 the tool by the thing it is analysing.
+
+**A file named on the command line is still input.** `deadweight diff` reads
+two BOM documents, and checking only that `entries` was an array let
+`{"entries":[null]}` through to the differ, which reported `Cannot read
+properties of null (reading 'id')`. Every field the differ reads is now
+validated and the refusal is the same four-part guidance as every other one,
+naming the entry and the field. A tool whose argument is that failures should
+say what happened does not get to print a stack-trace message.
 
 **The configuration reader is hand-written.** In a tool whose argument is that
 deserialising untrusted input is how you get executed, shipping a YAML engine

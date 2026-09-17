@@ -248,3 +248,54 @@ jobs:
             if (missing > 0) process.exit(1)
             console.log(LOADER_RULES.length + ' loader rules and ' + allFormats().length + ' formats documented.')
           "
+
+      - name: Assert a hostile repository cannot hang the analyser
+        # A 2 MB single line used to take about three quarters of an hour,
+        # because the expression that found calls backtracked quadratically.
+        # The suite covers this; running it against a real directory on a
+        # real runner covers the read path too. 90 s is ~100x the measured
+        # cost, so only a return of quadratic behaviour fails here.
+        timeout-minutes: 3
+        run: |
+          mkdir -p /tmp/hostile/src
+          node -e "
+            const { writeFileSync } = require('node:fs')
+            writeFileSync('/tmp/hostile/src/bundle.js', 'x = ' + 'a'.repeat(2_000_000))
+            writeFileSync('/tmp/hostile/requirements.txt', 'torch>=2.0\n')
+            for (let i = 0; i < 4000; i += 1) {
+              writeFileSync('/tmp/hostile/src/m' + i + '.py', 'import torch\ntorch.load(\"nowhere.pt\")\n')
+            }
+          "
+          start=$(date +%s)
+          node bin/deadweight.ts scan /tmp/hostile --quiet --fail-on none > /dev/null
+          elapsed=$(( $(date +%s) - start ))
+          echo "Analysed a hostile tree in ${elapsed}s."
+          if [ "$elapsed" -gt 90 ]; then
+            echo "::error::A hostile tree took ${elapsed}s. Something is superlinear again."
+            exit 1
+          fi
+
+      - name: Assert a malformed BOM gets guidance, not a stack trace
+        # `diff` reads a file named on a command line, which is still input.
+        # The contract is the four-part error, not a TypeError message.
+        run: |
+          echo '{"entries":[null]}' > /tmp/broken.json
+          node bin/deadweight.ts bom fixtures/demo-project --out /tmp/good.json --quiet
+          set +e
+          out=$(node bin/deadweight.ts diff /tmp/broken.json /tmp/good.json 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 1 ]; then
+            echo "::error::A malformed BOM should exit 1, got ${code}."
+            exit 1
+          fi
+          case "$out" in
+            *"stopped unexpectedly"*)
+              echo "::error::A malformed BOM produced an unhandled error instead of guidance."
+              exit 1 ;;
+          esac
+          case "$out" in
+            *"could not be read"*) echo "A malformed BOM was refused with guidance." ;;
+            *) echo "::error::Expected the bad-bom guidance."; exit 1 ;;
+          esac

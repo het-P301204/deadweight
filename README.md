@@ -1,7 +1,18 @@
+<div align="center">
+
 # DEADWEIGHT
 
-**AI model and skill supply-chain analyzer.** Know what your AI dependencies
-do when they load.
+**AI model and skill supply-chain analyzer.**<br>
+Know what your AI dependencies do when they load.
+
+[![CI](https://github.com/het-P301204/deadweight/actions/workflows/ci.yml/badge.svg)](https://github.com/het-P301204/deadweight/actions/workflows/ci.yml)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-5b8def)](https://nodejs.org)
+[![Tests](https://img.shields.io/badge/tests-<!-- dw:tests -->296<!-- /dw -->-3ac58d)](src/engine)
+[![Runtime dependencies](https://img.shields.io/badge/CLI%20dependencies-0-3ac58d)](package.json)
+[![Network calls](https://img.shields.io/badge/network%20calls-none-3ac58d)](SECURITY.md)
+
+</div>
 
 DEADWEIGHT points at a codebase and answers one question about every AI
 artifact it finds:
@@ -13,6 +24,19 @@ ARTIFACT -> FORMAT -> LOAD SITE -> LOAD BEHAVIOUR -> CONTEXT -> EVIDENCE -> ALTE
 It never loads the artifact to do it.
 
 ![The load boundary: nine artifacts traced through the six stages that decide what loading them does](docs/deadweight-overview.png)
+
+```bash
+# No install, no build, no dependencies. Node 24+.
+git clone https://github.com/het-P301204/deadweight.git
+cd deadweight && node bin/deadweight.ts scan fixtures/demo-project
+```
+
+**Contents** · [The problem](#the-problem) · [What it reports](#what-it-reports)
+· [Why it matters](#why-it-matters) · [Architecture](#architecture)
+· [Example](#example) · [Screenshots](#screenshots)
+· [Capabilities](#capabilities) · [Limitations](#limitations)
+· [Quick start](#quick-start) · [Security model](#security-model)
+· [Development](#development) · [Documentation](#documentation)
 
 ---
 
@@ -47,6 +71,23 @@ loading this execute code, where does that happen, who is standing there when
 it does, and is there a format that removes the surface rather than watching
 it** — and it reports scanner results as evidence about specific bytes rather
 than as a verdict.
+
+## What it reports
+
+Five load behaviours. Nothing is averaged into a severity score, and nothing
+silently becomes safe.
+
+| | Behaviour | Means | Example |
+| --- | --- | --- | --- |
+| 🔴 | `code` | Loading it runs code. The format has no safe mode, or the call site has opted out of one. | `pickle.load`, `torch.load(weights_only=False)` |
+| 🟣 | `directive` | Loading it injects instructions into a model's context. Nothing executes; what the system does still changes. | `SKILL.md`, an agent definition, a prompt template |
+| 🟢 | `guarded` | The format has an execution surface and a flag at the call site is holding it shut. | `numpy.load(allow_pickle=False)` |
+| 🟢 | `data` | No execution surface in the format at all. | `safetensors`, GGUF |
+| 🟠 | `unknown` | The question is real and the repository does not answer it. Carries one of seven reason codes. | `torch>=2.0`, a path built at run time |
+
+`unknown` is the point of the tool as much as `code` is. A range that spans
+the release which changed a default answers nothing, and reporting that as
+either safe or dangerous would be a guess dressed as a finding.
 
 ## Why it matters
 
@@ -105,6 +146,11 @@ of the product.
 `src/engine` touches no filesystem API and no browser global. The CLI runs its
 TypeScript sources directly through Node's native type stripping: no build
 step, no dependencies, nothing installed.
+
+The analysis is deterministic by construction — no clock, no randomness, no
+timestamps — so two runs over the same tree produce byte-identical canonical
+JSON and the same digest. That is what makes a BOM diff a diff of the project
+rather than a diff of when it was taken.
 
 ## Example
 
@@ -165,8 +211,10 @@ on the overview, the glyph in every row, the traced path in the drawer.
 | **Model BOM** — the inventory, with native, CycloneDX 1.6 and CSV exports, and the unresolved reason carried into the document rather than omitted. | **Evidence** — what each scanner said, whether it still binds to the bytes on disk, and what that scanner cannot see. |
 | ![Command palette](docs/deadweight-palette.png) | ![Light theme](docs/deadweight-light.png) |
 | **⌘K** — navigation, the filters you actually reach for, the exports, and every artifact by path. | **Light theme** — specified independently rather than inverted: the accents are darkened for paper and the surface stack runs the other way. |
-| ![Mobile](docs/deadweight-mobile.png) | ![404](docs/deadweight-404.png) |
-| **Mobile** — rows become cards and the facets fold behind a toggle. Nothing is dropped; the stripe, the behaviour, the context and the migration state are all still there. | **Error pages** — generated from one template, self-contained, and saying what happened, why it matters and what to do. A page that reports a network failure should not need the network. |
+| ![Mobile](docs/deadweight-mobile.png) | ![Empty state](docs/deadweight-empty.png) |
+| **Mobile** — rows become cards and the facets fold behind a toggle. Nothing is dropped; the stripe, the behaviour, the context and the migration state are all still there. | **Empty states** — a filter that matches nothing says which filter, and offers to clear it. "No results" is the least useful thing a filtered table can say. |
+| ![404](docs/deadweight-404.png) | ![First run](docs/deadweight-landing.png) |
+| **Error pages** — generated from one template, self-contained, and saying what happened, why it matters and what to do. A page that reports a network failure should not need the network. | **First run** — the question, the six stages that answer it, and the two ways in. No marketing copy above the fold. |
 
 Every image is captured from the built app by `scripts/screenshots.ts`, so a
 screenshot cannot show a product that does not exist.
@@ -178,6 +226,8 @@ screenshot cannot show a product that does not exist.
   arrays, safetensors, ONNX, GGUF, TFLite, Keras HDF5 and v3, SavedModel,
   Flax msgpack — plus agent skills, agent definitions, MCP server manifests,
   hook commands and prompt templates.
+  <!-- dw:formatcount -->21<!-- /dw --> formats,
+  <!-- dw:loaders -->24<!-- /dw --> loader rules.
 - **Classifies format from bytes**, not extensions: magic numbers,
   zip central-directory member names, length-prefixed headers, and a pickle
   opcode reader written from scratch that never unpickles.
@@ -248,6 +298,17 @@ node bin/deadweight.ts migrations ../my-ml-project
 node bin/deadweight.ts bom ../my-ml-project --format cyclonedx --out bom.json
 ```
 
+| Command | Does |
+| --- | --- |
+| `scan <dir>` | Full analysis, written for a terminal |
+| `artifacts <dir>` | One line per artifact |
+| `loadpaths <dir>` | Every load site, grouped by file |
+| `migrations <dir>` | Artifacts whose execution surface can be removed |
+| `evidence <dir>` | Scanner records, and what each scanner can see |
+| `bom <dir>` | Model BOM — `canonical`, `cyclonedx`, `csv` or `text` |
+| `explain <dir> <id>` | Everything resolved about one artifact |
+| `diff <a.json> <b.json>` | Compare two BOMs field by field |
+
 The web interface:
 
 ```bash
@@ -256,12 +317,11 @@ npm run dev     # then open the URL it prints
 npm run build   # static output in dist/, no server needed
 ```
 
-![First run: the question, the six stages that answer it, and the two ways in](docs/deadweight-landing.png)
-
 It opens on the six stages and two buttons. **Run the demo project** analyses
 a bundled synthetic repository through the real engine — not a fixture of
 results — and **Analyse a folder** points it at your own, read through the
-File API in the page.
+File API in the page. Nothing is uploaded, because there is nowhere to upload
+it to.
 
 In CI:
 
@@ -296,13 +356,22 @@ count, source size, notebook size, pickle opcodes and bytes, safetensors
 header size, zip entries, line length. They are named in one file,
 `src/engine/limits.ts`, so the threat model can point at it.
 
+**The analysed tree cannot make the analyser hang.** Bounds alone are not
+enough: a 2 MB line is *within* the source limit, and the expression that
+once found calls backtracked quadratically over it — forty minutes of work
+from one committed file. Call finding is linear now, reference resolution and
+sibling lookup are indexed rather than rescanned, and both the suite and CI
+time a deliberately hostile tree against a budget so a return of superlinear
+behaviour fails the build.
+
 **Untrusted input is treated as input.** Paths are refused rather than
-repaired — no traversal, no absolute forms, no NUL. Control characters that
-could rewrite a terminal line are stripped from anything that came out of a
-scanned file. Parsed JSON has prototype-polluting keys dropped at every level.
-Globs from the analysed repository compile to regular expressions with no
-backtracking constructs. CSV cells beginning with a formula character are
-neutralised.
+repaired — no traversal, no absolute forms, no NUL. Symbolic links are listed
+and never followed. Control characters that could rewrite a terminal line are
+stripped from anything that came out of a scanned file. Parsed JSON has
+prototype-polluting keys dropped at every level. Globs from the analysed
+repository compile to regular expressions with no backtracking constructs.
+CSV cells beginning with a formula character are neutralised. A malformed BOM
+handed to `diff` is refused with guidance rather than a stack trace.
 
 **Nothing leaves the page.** The browser build has no `fetch`, no
 `XMLHttpRequest`, no beacon and no WebSocket; every font is bundled; the page
@@ -317,10 +386,11 @@ Full detail, including what is explicitly out of scope, in
 
 ```bash
 npm install
-npm test          # <!-- dw:tests -->258<!-- /dw --> cases over the engine and the design tokens
+npm test          # <!-- dw:tests -->296<!-- /dw --> cases over the engine and the design tokens
 npm run lint
 npm run typecheck
 npm run build
+npm run verify        # everything above, plus all four generator checks
 
 npm run fixtures      # regenerate the binary demo fixtures
 npm run demo-tree     # regenerate the browser-bundled demo project
@@ -335,12 +405,17 @@ committed output no longer matches its generator, which is how the demo
 project the browser analyses cannot drift from the one the CLI is tested
 against.
 
-CI asserts the product's claims, not only that it builds: that the engine
-reads no clock and no random source, that two runs produce an identical
-digest, that no network API appears in the bundle, that the engine references
-no browser global, that no deserialising call reaches the analysis path, that
-every malformed fixture is refused, and that the exit codes behave as
-documented.
+**<!-- dw:ciasserts -->14<!-- /dw --> of CI's
+<!-- dw:cisteps -->21<!-- /dw --> steps assert a claim this README makes**,
+rather than that the code compiles: that the engine reads no clock and no
+random source, that two runs produce an identical digest, that no network API
+appears in the bundle, that the engine references no browser global, that no
+deserialising call reaches the analysis path, that every malformed fixture is
+refused, that a hostile tree analyses inside a time budget, that a malformed
+BOM gets guidance, that every loader rule points at a documented section, and
+that the exit codes behave as documented. A claim nothing checks is a claim
+nobody should believe, including you about this paragraph — the workflow is
+[one file](.github/workflows/ci.yml).
 
 Layout:
 
@@ -362,7 +437,10 @@ docs/           load semantics, methodology, schemas
   stops.
 - [Schemas](docs/schema-format.md) — the report, the BOM, the CycloneDX
   subset, the configuration and the evidence format.
-- [Security model](SECURITY.md).
+- [Security model](SECURITY.md) — threat model, bounds, and what is out of
+  scope.
+- [Contributing](CONTRIBUTING.md) — how to add a loader rule, a format or an
+  alternative.
 
 ## Demo project
 

@@ -20,7 +20,18 @@
  * masking for free, and neither is reliable with regular expressions alone.
  */
 
-export const FILLER = ''
+/**
+ * The character that replaces masked content.
+ *
+ * Built from its code point rather than written as a literal. U+0001 never
+ * occurs in real source, so nothing in a scanned file can be mistaken for
+ * filler -- but a literal control character inside a string literal is
+ * invisible in every editor, diff and code review, so the line would read
+ * `FILLER = ''` and the next person to touch it would reasonably conclude
+ * the mask collapses the file. An escape sequence is no safer: tooling that
+ * writes source has been known to resolve one on the way in.
+ */
+export const FILLER = String.fromCharCode(1)
 
 export interface Literal {
   /** Index of the opening quote in the original text. */

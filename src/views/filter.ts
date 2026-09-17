@@ -70,6 +70,17 @@ export function activeFilterCount(filters: Filters): number {
   )
 }
 
+/**
+ * The character joining haystack fields.
+ *
+ * It has to be something no field can contain, so that a query cannot match
+ * across a field boundary and claim a path contains a loader name. U+0001
+ * qualifies, and building it from its code point keeps it visible in the
+ * source: written as a literal the line reads `parts.join('  ')` and the next
+ * person would reasonably delete the "stray" spaces.
+ */
+const HAYSTACK_SEPARATOR = String.fromCharCode(1)
+
 /** Everything about a record a search should be able to reach. */
 export function haystack(record: ArtifactRecord): string {
   const parts: string[] = [
@@ -94,7 +105,7 @@ export function haystack(record: ArtifactRecord): string {
   }
   for (const record_ of record.evidence) parts.push(record_.scanner, record_.binding, record_.result)
   for (const finding of record.findings) parts.push(finding.kind, finding.title)
-  return parts.join('  ').toLowerCase()
+  return parts.join(` ${HAYSTACK_SEPARATOR} `).toLowerCase()
 }
 
 function evidenceStateOf(record: ArtifactRecord): EvidenceFilter {

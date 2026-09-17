@@ -32,7 +32,14 @@ import { canonicalJson } from '../src/engine/hash.ts'
 import { scannerProfile } from '../src/engine/evidence.ts'
 import { BEHAVIOUR_LABEL } from '../src/engine/stripe.ts'
 import { indicators } from '../src/engine/summary.ts'
+import { LOAD_BEHAVIOURS } from '../src/engine/types.ts'
 import type { ArtifactRecord, LoadBehaviour, Report, StageEvent } from '../src/engine/types.ts'
+
+/**
+ * Largest BOM accepted by `diff`. Generous next to any real inventory, and
+ * still a bound: every other read in this project has one.
+ */
+const MAX_BOM_CHARS = 32 * 1024 * 1024
 
 /* -------------------------------------------------------------------------- */
 /* Terminal styling                                                           */
@@ -43,14 +50,25 @@ const COLOUR =
   process.env['TERM'] !== 'dumb' &&
   process.stdout.isTTY === true
 
+/**
+ * SGR escapes, built from the code point.
+ *
+ * A literal escape byte in a string literal is invisible in every editor and
+ * diff: the line reads `\`[2m${s}[0m\`` and looks like a typo rather than
+ * like terminal styling. Naming it costs one constant and makes the source
+ * say what it does.
+ */
+const CSI = `${String.fromCharCode(27)}[`
+const RESET = `${CSI}0m`
+
 const style = {
-  dim: (s: string) => (COLOUR ? `[2m${s}[0m` : s),
-  bold: (s: string) => (COLOUR ? `[1m${s}[0m` : s),
-  red: (s: string) => (COLOUR ? `[31m${s}[0m` : s),
-  green: (s: string) => (COLOUR ? `[32m${s}[0m` : s),
-  amber: (s: string) => (COLOUR ? `[33m${s}[0m` : s),
-  blue: (s: string) => (COLOUR ? `[36m${s}[0m` : s),
-  purple: (s: string) => (COLOUR ? `[35m${s}[0m` : s),
+  dim: (s: string) => (COLOUR ? `${CSI}2m${s}${RESET}` : s),
+  bold: (s: string) => (COLOUR ? `${CSI}1m${s}${RESET}` : s),
+  red: (s: string) => (COLOUR ? `${CSI}31m${s}${RESET}` : s),
+  green: (s: string) => (COLOUR ? `${CSI}32m${s}${RESET}` : s),
+  amber: (s: string) => (COLOUR ? `${CSI}33m${s}${RESET}` : s),
+  blue: (s: string) => (COLOUR ? `${CSI}36m${s}${RESET}` : s),
+  purple: (s: string) => (COLOUR ? `${CSI}35m${s}${RESET}` : s),
 }
 
 const BEHAVIOUR_COLOUR: Record<LoadBehaviour, (s: string) => string> = {
@@ -619,6 +637,17 @@ async function emit(output: string, args: Args): Promise<void> {
   process.stdout.write(output)
 }
 
+/**
+ * Read a BOM for `diff`, and check it far enough to trust the cast.
+ *
+ * A file named on a command line is still input. Checking only that
+ * `entries` was an array let `{"entries":[null]}` through to the differ,
+ * which reported `Cannot read properties of null (reading 'id')` -- a
+ * JavaScript stack-trace message, from a tool whose whole argument is that
+ * failures should say what happened and what to do about it. Every field the
+ * differ reads is checked here, and anything missing is a `bad-bom` with the
+ * usual guidance.
+ */
 async function readBom(path: string): Promise<ModelBom> {
   let text: string
   try {
@@ -626,20 +655,58 @@ async function readBom(path: string): Promise<ModelBom> {
   } catch {
     throw new AnalysisError('bad-bom', `${path} could not be read.`)
   }
+  if (text.length > MAX_BOM_CHARS) {
+    throw new AnalysisError(
+      'bad-bom',
+      `${path} is ${(text.length / 1_048_576).toFixed(1)} MB; the limit is ${MAX_BOM_CHARS / 1_048_576} MB.`,
+    )
+  }
   let doc: unknown
   try {
     doc = JSON.parse(text)
   } catch (error) {
     throw new AnalysisError('bad-bom', `${path}: ${(error as Error).message}`)
   }
-  if (
-    doc === null ||
-    typeof doc !== 'object' ||
-    !Array.isArray((doc as Record<string, unknown>)['entries'])
-  ) {
+  if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+    throw new AnalysisError('bad-bom', `${path}: expected an object at the top level.`)
+  }
+  const entries = (doc as Record<string, unknown>)['entries']
+  if (!Array.isArray(entries)) {
     throw new AnalysisError('bad-bom', `${path}: no "entries" array.`)
   }
+  entries.forEach((entry, at) => checkBomEntry(entry, `${path}: entries[${at}]`))
   return doc as ModelBom
+}
+
+/** The fields `diffBoms` reads, and nothing more. */
+function checkBomEntry(entry: unknown, where: string): void {
+  const need = (condition: boolean, what: string): void => {
+    if (!condition) throw new AnalysisError('bad-bom', `${where} ${what}.`)
+  }
+  need(entry !== null && typeof entry === 'object' && !Array.isArray(entry), 'is not an object')
+  const record = entry as Record<string, unknown>
+  need(typeof record['id'] === 'string', 'has no string "id"')
+  need(typeof record['locator'] === 'string', 'has no string "locator"')
+
+  const format = record['format']
+  need(format !== null && typeof format === 'object', 'has no "format" object')
+  need(typeof (format as Record<string, unknown>)['id'] === 'string', 'has no "format.id"')
+
+  const load = record['load']
+  need(load !== null && typeof load === 'object', 'has no "load" object')
+  const behaviour = (load as Record<string, unknown>)['behaviour']
+  need(
+    typeof behaviour === 'string' && (LOAD_BEHAVIOURS as readonly string[]).includes(behaviour),
+    `has an unrecognised "load.behaviour" (expected one of ${LOAD_BEHAVIOURS.join(', ')})`,
+  )
+
+  const digest = record['digest']
+  need(
+    digest === null ||
+      digest === undefined ||
+      (typeof digest === 'object' && typeof (digest as Record<string, unknown>)['value'] === 'string'),
+    'has a "digest" that is neither null nor a record with a string value',
+  )
 }
 
 try {

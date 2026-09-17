@@ -204,11 +204,13 @@ export async function analyze(tree: SourceTree, options: AnalyzeOptions = {}): P
   /* ---- 4. artifacts ---------------------------------------------------- */
   report({ stage: 'artifacts', status: 'running', detail: 'Recognising artifacts from their bytes' })
   const byPath = new Map(entries.map((e) => [e.path, e]))
+  const resolveReference = referenceResolver(byPath)
+  const siblings = siblingIndex(entries)
   const referenced = new Map<string, { entry: TreeEntry | null; reference: string }>()
 
   for (const call of calls) {
     if (call.targetLiteral === null) continue
-    const resolved = resolveReference(call, byPath)
+    const resolved = resolveReference(call)
     if (resolved !== null) referenced.set(resolved.key, resolved.value)
   }
 
@@ -242,7 +244,7 @@ export async function analyze(tree: SourceTree, options: AnalyzeOptions = {}): P
       version: null,
       pickle: classified.pickle,
       tensorHeader: classified.tensorHeader,
-      siblings: siblingsOf(entry.path, entries),
+      siblings: siblingsOf(entry.path, siblings),
     })
   }
 
@@ -275,7 +277,7 @@ export async function analyze(tree: SourceTree, options: AnalyzeOptions = {}): P
 
   for (const call of calls) {
     siteCounter += 1
-    const resolved = call.targetLiteral === null ? null : resolveReference(call, byPath)
+    const resolved = call.targetLiteral === null ? null : resolveReference(call)
     const artifactId = resolved?.key ?? null
     const artifact = artifactId === null ? null : (artifacts.get(artifactId) ?? null)
     const site: LoadSite = {
@@ -470,39 +472,77 @@ function dedupe(contexts: readonly LoadContext[]): readonly LoadContext[] {
  * `org/name` repository reference becomes a remote artifact. Anything else is
  * unresolved and stays that way.
  */
-function resolveReference(
-  call: RawCall,
-  byPath: ReadonlyMap<string, TreeEntry>,
-): { key: string; value: { entry: TreeEntry | null; reference: string } } | null {
-  const literal = call.targetLiteral
-  if (literal === null || literal === '') return null
-  const cleaned = sanitise(literal).replace(/\\/g, '/').replace(/^\.\//, '')
+type Reference = { key: string; value: { entry: TreeEntry | null; reference: string } }
 
-  const direct = byPath.get(cleaned)
-  if (direct !== undefined) return { key: cleaned, value: { entry: direct, reference: cleaned } }
-
-  // `weights/model.pt` written from inside `src/` still names the same file.
-  const suffix = [...byPath.keys()].filter(
-    (path) => path === cleaned || path.endsWith(`/${cleaned}`),
-  )
-  if (suffix.length === 1) {
-    const path = suffix[0] as string
-    return { key: path, value: { entry: byPath.get(path) as TreeEntry, reference: cleaned } }
+/**
+ * A reference resolver with its indexes built once.
+ *
+ * The suffix rule below used to scan every path in the tree for every load
+ * site, and materialise the key list to do it. That is O(sites x entries):
+ * measured at 111 ms for a thousand sites and 7.9 s for sixteen thousand, and
+ * the same reference was resolved twice, once to discover artifacts and again
+ * to bind sites to them. A repository large enough -- or written to be large
+ * enough -- turned that into minutes of work, which is a denial of service
+ * delivered by the analysed tree.
+ *
+ * Two indexes remove it. Every candidate for `endsWith('/' + reference)` must
+ * share the reference's final path segment, so bucketing paths by basename
+ * turns the scan into a lookup over a bucket that is almost always one entry
+ * long, with the same predicate applied inside it -- the answer is unchanged.
+ * And since the resolution depends on nothing but the literal, memoising it
+ * removes the second pass entirely.
+ */
+function referenceResolver(byPath: ReadonlyMap<string, TreeEntry>): (call: RawCall) => Reference | null {
+  const byBasename = new Map<string, string[]>()
+  for (const path of byPath.keys()) {
+    const base = basename(path)
+    const bucket = byBasename.get(base)
+    if (bucket === undefined) byBasename.set(base, [path])
+    else bucket.push(path)
   }
 
-  // A repository reference: `org/name`, optionally with a revision. It must
-  // carry no file extension, or `config/index.yaml` would become a model.
-  if (/^[A-Za-z0-9][\w.-]*\/[\w.-]+$/.test(cleaned) && extname(cleaned) === '') {
-    return { key: `hf:${cleaned}`, value: { entry: null, reference: cleaned } }
+  const memo = new Map<string, Reference | null>()
+
+  return (call: RawCall): Reference | null => {
+    const literal = call.targetLiteral
+    if (literal === null || literal === '') return null
+    const cached = memo.get(literal)
+    if (cached !== undefined || memo.has(literal)) return cached ?? null
+    const resolved = resolve(literal)
+    memo.set(literal, resolved)
+    return resolved
   }
 
-  // A local path that names a file not in the tree: the reference is real and
-  // the file is not here, which is worth reporting as an unresolved artifact.
-  if (/[/.]/.test(cleaned) && MODEL_EXTENSIONS.has(extname(cleaned))) {
-    return { key: `missing:${cleaned}`, value: { entry: null, reference: cleaned } }
-  }
+  function resolve(literal: string): Reference | null {
+    const cleaned = sanitise(literal).replace(/\\/g, '/').replace(/^\.\//, '')
 
-  return null
+    const direct = byPath.get(cleaned)
+    if (direct !== undefined) return { key: cleaned, value: { entry: direct, reference: cleaned } }
+
+    // `weights/model.pt` written from inside `src/` still names the same file.
+    const suffix = (byBasename.get(basename(cleaned)) ?? []).filter(
+      (path) => path === cleaned || path.endsWith(`/${cleaned}`),
+    )
+    if (suffix.length === 1) {
+      const path = suffix[0] as string
+      return { key: path, value: { entry: byPath.get(path) as TreeEntry, reference: cleaned } }
+    }
+
+    // A repository reference: `org/name`, optionally with a revision. It must
+    // carry no file extension, or `config/index.yaml` would become a model.
+    if (/^[A-Za-z0-9][\w.-]*\/[\w.-]+$/.test(cleaned) && extname(cleaned) === '') {
+      return { key: `hf:${cleaned}`, value: { entry: null, reference: cleaned } }
+    }
+
+    // A local path that names a file not in the tree: the reference is real
+    // and the file is not here, which is worth reporting as an unresolved
+    // artifact rather than dropping.
+    if (/[/.]/.test(cleaned) && MODEL_EXTENSIONS.has(extname(cleaned))) {
+      return { key: `missing:${cleaned}`, value: { entry: null, reference: cleaned } }
+    }
+
+    return null
+  }
 }
 
 function remoteArtifact(key: string, reference: string): Artifact {
@@ -544,17 +584,34 @@ function revisionOf(reference: string): string | null {
   return at ? (at[1] as string) : null
 }
 
+/**
+ * Group entries by directory and stem, so that finding `model.safetensors`
+ * next to `model.bin` is a lookup rather than a walk of the tree.
+ *
+ * Keyed on `${dir}/${stem}`, which is unambiguous because a stem contains no
+ * separator: two different pairs cannot produce the same key. Walking the
+ * tree per artifact instead was the second O(artifacts x entries) scan in
+ * this file, and the one that a repository of ten thousand model files would
+ * have found.
+ */
+function siblingIndex(entries: readonly TreeEntry[]): Map<string, TreeEntry[]> {
+  const index = new Map<string, TreeEntry[]>()
+  for (const entry of entries) {
+    const key = `${dirname(entry.path)}/${stem(entry.path)}`
+    const bucket = index.get(key)
+    if (bucket === undefined) index.set(key, [entry])
+    else bucket.push(entry)
+  }
+  return index
+}
+
 function siblingsOf(
   path: string,
-  entries: readonly TreeEntry[],
+  index: ReadonlyMap<string, TreeEntry[]>,
 ): readonly { locator: string; format: FormatId }[] {
-  const dir = dirname(path)
-  const base = stem(path)
   const out: { locator: string; format: FormatId }[] = []
-  for (const entry of entries) {
+  for (const entry of index.get(`${dirname(path)}/${stem(path)}`) ?? []) {
     if (entry.path === path) continue
-    if (dirname(entry.path) !== dir) continue
-    if (stem(entry.path) !== base) continue
     const format = inferFormat(entry.path)
     if (format === 'unknown') continue
     out.push({ locator: entry.path, format })
