@@ -108,8 +108,14 @@ jobs:
             echo "::error::A decompression or deserialisation library is reachable from the analysis."
             exit 1
           fi
+          # Comment lines are excluded throughout this step. This is a project
+          # about deserialisation, so its comments name these APIs constantly,
+          # and a check that cannot tell prose from code would either fire on
+          # an accurate comment or push people into writing vague ones.
+          strip_comments() { grep -vE '^[^:]+:[0-9]+: *(\*|//|/\*)'; }
+
           if grep -rnE "\b(DecompressionStream|CompressionStream)\b|\beval\s*\(|new Function\s*\(" \
-              --include="*.ts" src/engine src/adapters bin | grep -v "\.test\.ts"; then
+              --include="*.ts" src/engine src/adapters bin | grep -v "\.test\.ts" | strip_comments | grep .; then
             echo "::error::The analysis path decompresses or evaluates."
             exit 1
           fi
@@ -118,7 +124,8 @@ jobs:
           # configuration -- and is not legitimate anywhere else, because an
           # artifact is never parsed.
           if grep -rnE "\bJSON\.parse\b" --include="*.ts" src/engine \
-              | grep -vE "(deps|manifests|config|notebook|containers)\.ts|\.test\.ts"; then
+              | grep -vE "(deps|manifests|config|notebook|containers)\.ts|\.test\.ts" \
+              | strip_comments | grep .; then
             echo "::error::A JSON.parse call appears outside the readers permitted to parse a document."
             exit 1
           fi
