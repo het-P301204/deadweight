@@ -60,7 +60,7 @@ const figures: Record<string, string> = {
   tests: await countTests(),
   loaders: String(LOADER_RULES.length),
   formatcount: String(allFormats().length),
-  ...(await ciSteps()),
+  ...(await claimCount()),
 
   // Two multi-line blocks. The marker regex allows newlines, so a whole code
   // block can be generated -- which matters more than the single figures: a
@@ -70,21 +70,24 @@ const figures: Record<string, string> = {
 }
 
 /**
- * How many CI steps there are, and how many of them assert a product claim.
+ * How many claims are asserted, counted from the checks themselves.
  *
- * The README says CI checks the claims rather than only building. That is a
- * claim about CI, so it is counted from the workflow rather than typed: the
- * assertion steps are the ones whose name begins with "Assert", which is the
- * convention the file already follows.
+ * The README says the build checks the product's claims rather than only that
+ * it compiles, which is a claim about the checks and therefore gets counted
+ * rather than typed. Counting *steps* was the wrong unit once the assertions
+ * moved out of the workflow and into one script: twelve checks in one step is
+ * more assurance than twelve steps, not less.
  */
-async function ciSteps(): Promise<{ cisteps: string; ciasserts: string }> {
-  const workflow = await readFile(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')
-  const names = [...workflow.matchAll(/^ {6}- name: (.+)$/gm)].map((m) => (m[1] as string).trim())
-  const uses = [...workflow.matchAll(/^ {6}- uses: /gm)].length
-  return {
-    cisteps: String(names.length + uses),
-    ciasserts: String(names.filter((name) => name.startsWith('Assert')).length),
+async function claimCount(): Promise<{ claims: string }> {
+  const script = await readFile(join(ROOT, 'scripts', 'assert-claims.ts'), 'utf8')
+  const checks = [...script.matchAll(/^ {4}name: '/gm)].length
+  // The four generators are asserted too, each by its own `--check` mode.
+  const generators = 4
+  if (checks === 0) {
+    console.error('::error::Could not count the checks in scripts/assert-claims.ts.')
+    process.exit(1)
   }
+  return { claims: String(checks + generators) }
 }
 
 /** The behaviour x context table, exactly as the product computes it. */

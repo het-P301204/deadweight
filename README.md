@@ -405,17 +405,20 @@ committed output no longer matches its generator, which is how the demo
 project the browser analyses cannot drift from the one the CLI is tested
 against.
 
-**<!-- dw:ciasserts -->14<!-- /dw --> of CI's
-<!-- dw:cisteps -->21<!-- /dw --> steps assert a claim this README makes**,
-rather than that the code compiles: that the engine reads no clock and no
-random source, that two runs produce an identical digest, that no network API
-appears in the bundle, that the engine references no browser global, that no
-deserialising call reaches the analysis path, that every malformed fixture is
-refused, that a hostile tree analyses inside a time budget, that a malformed
-BOM gets guidance, that every loader rule points at a documented section, and
-that the exit codes behave as documented. A claim nothing checks is a claim
-nobody should believe, including you about this paragraph — the workflow is
-[one file](.github/workflows/ci.yml).
+**<!-- dw:claims -->16<!-- /dw --> claims this README makes are asserted by
+the build**, rather than only that the code compiles: that the engine reads no
+clock and no random source, that two runs produce an identical digest, that no
+network API appears in the bundle, that the engine references no browser
+global, that no deserialising call reaches the analysis path, that a hostile
+tree analyses inside a time budget, that a malformed BOM gets guidance, that
+every loader rule points at a documented section, and that the exit codes
+behave as documented.
+
+They live in [`scripts/assert-claims.ts`](scripts/assert-claims.ts), which
+`npm run verify` and CI both run, so a claim cannot break on the runner while
+passing on your machine — it did once, and the first anyone knew was a failure
+email. A claim nothing checks is a claim nobody should believe, including you
+about this paragraph: run `npm run assert-claims` and it will tell you.
 
 Layout:
 

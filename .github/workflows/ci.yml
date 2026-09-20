@@ -41,146 +41,22 @@ jobs:
         run: npm run build
 
       # ----------------------------------------------------------------------
-      # Everything below asserts a claim the product makes, rather than that
-      # it compiles. A claim nothing checks is a claim nobody should believe.
+      # The two steps below assert the claims the product makes, rather than
+      # that it compiles. A claim nothing checks is a claim nobody should
+      # believe.
+      #
+      # They were thirteen shell steps that existed only in this file, which
+      # meant they could not be run before pushing: a change could pass lint,
+      # typecheck, the suite and the build locally and still fail here. That
+      # happened, when a grep for JSON.parse matched a comment *about*
+      # JSON.parse, and the first anyone knew of it was a failure email.
+      #
+      # They are one Node script now -- scripts/assert-claims.ts -- called by
+      # this workflow and by `npm run verify`, so green locally means green
+      # here. Reading the files in Node also lets the checks skip comment
+      # lines, which a grep cannot do, and this is a project whose prose
+      # discusses unpickling and decompression constantly.
       # ----------------------------------------------------------------------
-
-      - name: Assert the CLI runs with no build step and no dependencies
-        run: |
-          node bin/deadweight.ts version
-          node bin/deadweight.ts artifacts fixtures/demo-project --quiet > /dev/null
-          node bin/deadweight.ts loadpaths fixtures/demo-project --quiet > /dev/null
-          node bin/deadweight.ts migrations fixtures/demo-project --quiet > /dev/null
-          node bin/deadweight.ts evidence fixtures/demo-project --quiet > /dev/null
-          node bin/deadweight.ts explain fixtures/demo-project weights/ranker.bin --quiet > /dev/null
-          echo "The CLI ran from source."
-
-      - name: Assert the exit codes are usable in a pipeline
-        # 0 clean, 2 findings at or above the threshold, 1 could not analyse.
-        # A supply-chain check that cannot fail a build is one nobody runs.
-        run: |
-          set +e
-          node bin/deadweight.ts scan fixtures/demo-project --quiet > /dev/null
-          findings=$?
-          node bin/deadweight.ts scan fixtures/demo-project --quiet --fail-on none > /dev/null
-          ignored=$?
-          node bin/deadweight.ts scan ./does-not-exist --quiet > /dev/null 2>&1
-          missing=$?
-          set -e
-          [ "$findings" -eq 2 ] || { echo "::error::Expected exit 2 for a project with execution surfaces, got $findings."; exit 1; }
-          [ "$ignored" -eq 0 ] || { echo "::error::Expected exit 0 with --fail-on none, got $ignored."; exit 1; }
-          [ "$missing" -eq 1 ] || { echo "::error::Expected exit 1 for an unreadable path, got $missing."; exit 1; }
-          echo "Exit codes behave as documented."
-
-      - name: Assert the analysis is reproducible
-        # The BOM carries no timestamp precisely so that this holds, which is
-        # what makes a diff between two BOMs a diff of the project.
-        run: |
-          node bin/deadweight.ts bom fixtures/demo-project --quiet --out /tmp/a.json || true
-          node bin/deadweight.ts bom fixtures/demo-project --quiet --out /tmp/b.json || true
-          cmp -s /tmp/a.json /tmp/b.json || { echo "::error::A repeat run produced a different BOM; the analysis is not deterministic."; exit 1; }
-          grep -q '"schema":"deadweight.bom/1"' /tmp/a.json || { echo "::error::The BOM is missing its schema marker."; exit 1; }
-          if grep -qE '[0-9]{4}-[0-9]{2}-[0-9]{2}T' /tmp/a.json; then
-            echo "::error::The BOM contains a timestamp; a diff between two of them would report every entry as changed."
-            exit 1
-          fi
-          echo "Two runs produced an identical BOM, with no timestamp in it."
-
-      - name: Assert a BOM diff of a project against itself is empty
-        run: |
-          set +e
-          node bin/deadweight.ts diff /tmp/a.json /tmp/b.json --quiet
-          code=$?
-          set -e
-          [ "$code" -eq 0 ] || { echo "::error::Diffing a BOM against an identical BOM reported a change (exit $code)."; exit 1; }
-          echo "An unchanged project produces an unchanged document."
-
-      - name: Assert the engine never deserialises an artifact
-        # The product's central claim. Recognition reads bytes and matches
-        # signatures. These checks look for imports and calls rather than for
-        # words, because the engine's prose says "unpickle" and "decompress"
-        # constantly -- that is what it is explaining.
-        run: |
-          # No decompression or deserialisation library may be reachable from
-          # the analysis, in either front end.
-          if grep -rnE "from ['\"](node:)?(zlib|v8)['\"]|require\(['\"](node:)?(zlib|v8)['\"]\)|from ['\"](pako|fflate|msgpackr|js-yaml|yaml|protobufjs|bson|cbor)['\"]" \
-              --include="*.ts" src/engine src/adapters bin; then
-            echo "::error::A decompression or deserialisation library is reachable from the analysis."
-            exit 1
-          fi
-          # Comment lines are excluded throughout this step. This is a project
-          # about deserialisation, so its comments name these APIs constantly,
-          # and a check that cannot tell prose from code would either fire on
-          # an accurate comment or push people into writing vague ones.
-          strip_comments() { grep -vE '^[^:]+:[0-9]+: *(\*|//|/\*)'; }
-
-          if grep -rnE "\b(DecompressionStream|CompressionStream)\b|\beval\s*\(|new Function\s*\(" \
-              --include="*.ts" src/engine src/adapters bin | grep -v "\.test\.ts" | strip_comments | grep .; then
-            echo "::error::The analysis path decompresses or evaluates."
-            exit 1
-          fi
-          # JSON.parse is legitimate for the documents DEADWEIGHT reads on
-          # purpose -- manifests, lockfiles, notebooks, evidence, its own
-          # configuration -- and is not legitimate anywhere else, because an
-          # artifact is never parsed.
-          if grep -rnE "\bJSON\.parse\b" --include="*.ts" src/engine \
-              | grep -vE "(deps|manifests|config|notebook|containers)\.ts|\.test\.ts" \
-              | strip_comments | grep .; then
-            echo "::error::A JSON.parse call appears outside the readers permitted to parse a document."
-            exit 1
-          fi
-          # The runtime dependency list is the other half of the same claim.
-          node -e "
-            const deps = Object.keys(require('./package.json').dependencies);
-            const allowed = /^(@fontsource|@fontsource-variable|react|react-dom)/;
-            const extra = deps.filter((d) => !allowed.test(d));
-            if (extra.length) {
-              console.error('::error::Unexpected runtime dependencies: ' + extra.join(', '));
-              process.exit(1);
-            }
-            console.log('Runtime dependencies are React and fonts only.');
-          "
-          echo "No deserialising call in the analysis path."
-
-      - name: Assert the engine reads no clock and no randomness
-        # Two analyses of the same tree must produce the same digest.
-        run: |
-          if grep -rnE "Date\.now\(|new Date\(|Math\.random\(|crypto\.randomUUID" \
-              --include="*.ts" src/engine bin | grep -v "\.test\.ts" | grep -vE "^\S+: *(//|\*|/\*)"; then
-            echo "::error::Engine or CLI reads the clock or a random source."
-            exit 1
-          fi
-          echo "No clock or randomness outside the tests."
-
-      - name: Assert the engine does not reach into the browser
-        # The engine is shared with the CLI, where there is no document. The
-        # trailing [A-Za-z_] requires a real member access: the words
-        # "document" and "window" appear throughout the prose here.
-        run: |
-          if grep -rnE "\b(document|window|localStorage|navigator|atob|btoa)\.[A-Za-z_]" \
-              --include="*.ts" src/engine | grep -v "\.test\.ts" | grep -vE "^\S+: *(//|\*|/\*)"; then
-            echo "::error::Engine source references a browser global; it has to run under Node too."
-            exit 1
-          fi
-          echo "Engine is free of browser globals."
-
-      - name: Assert nothing about an analysed project can leave the page
-        run: |
-          # RTCPeerConnection is on this list for a reason worth stating: it is
-          # the one channel `connect-src 'none'` does not govern, because no
-          # CSP directive covers WebRTC. Workers and importScripts *are*
-          # blocked at runtime by `default-src 'none'`, but a grep that only
-          # catches what the policy already stops is not adding anything.
-          if grep -rEl "fetch\(|XMLHttpRequest|navigator\.sendBeacon|new WebSocket|EventSource|RTCPeerConnection|WebTransport|importScripts|new Worker|SharedWorker" dist/assets/*.js; then
-            echo "::error::The built bundle references a network or worker API. DEADWEIGHT analyses a codebase in the tab and nothing may leave it."
-            exit 1
-          fi
-          if grep -rE "https?://[^\"')]*\.(woff2?|ttf|otf|css)" dist/assets/*.css; then
-            echo "::error::Built CSS references a remote font, which is a request to a third party on every load."
-            exit 1
-          fi
-          grep -q "connect-src 'none'" dist/index.html || { echo "::error::The built page is missing connect-src 'none'."; exit 1; }
-          echo "No network APIs, no remote fonts, and the policy is in the page."
 
       - name: Assert the generated artifacts match their generators
         # Four things are generated and committed. Each is checked rather than
@@ -192,122 +68,14 @@ jobs:
           node scripts/error-pages.ts --check
           node scripts/docs-numbers.ts --check
 
-      - name: Assert the error pages stand on their own
-        # Each is served by the host without the bundle, so a reference to a
-        # stylesheet, a script or a remote font would leave the page unstyled
-        # or, worse, make a request from a page that exists to report a failure.
-        run: |
-          if grep -nE "<script|<link|https?://[^\"')]*\.(css|js|woff2?|ttf)" public/403.html public/404.html public/500.html; then
-            echo "::error::An error page references an external resource; it has to render with no bundle and no network."
-            exit 1
-          fi
-          for status in 403 404 500; do
-            [ -f "dist/$status.html" ] || { echo "::error::public/$status.html was not copied into dist/."; exit 1; }
-          done
-          echo "Error pages are self-contained and published."
-
-      - name: Assert the demo project is a file list, not a results fixture
-        # The browser's demo mode must run the real engine over the real
-        # fixtures. A fixture of *results* would make the demo a screenshot,
-        # so the generated module is checked for shape rather than for words
-        # -- the fixture files themselves legitimately contain prose like
-        # "summary" and "findings".
-        run: |
-          node --input-type=module -e "
-            import { DEMO_FILES, DEMO_PROJECT_NAME } from './src/demo-tree.generated.ts'
-            const module_ = await import('./src/demo-tree.generated.ts')
-            const exported = Object.keys(module_).sort().join(',')
-            if (exported !== 'DEMO_FILES,DEMO_PROJECT_NAME') {
-              console.error('::error::The demo tree exports more than a file list: ' + exported)
-              process.exit(1)
-            }
-            for (const file of DEMO_FILES) {
-              const keys = Object.keys(file).sort().join(',')
-              if (keys !== 'path,text' && keys !== 'base64,path') {
-                console.error('::error::A demo entry has unexpected keys: ' + keys)
-                process.exit(1)
-              }
-            }
-            console.log(DEMO_FILES.length + ' demo files for ' + DEMO_PROJECT_NAME + ', shape verified.')
-          "
-          grep -q "analyze(" src/state.ts || { echo "::error::The app does not call analyze; the demo would not be a real analysis."; exit 1; }
-          echo "Demo mode runs the analysis."
-
-      - name: Assert every loader rule points at a documented section
-        # Each rule carries a doc anchor, and the product shows its summary.
-        # A rule whose reference does not resolve is a rule nobody can check.
-        run: |
-          node --input-type=module -e "
-            import { readFile } from 'node:fs/promises'
-            import { LOADER_RULES } from './src/engine/loaders.ts'
-            import { allFormats } from './src/engine/formats.ts'
-            const docs = await readFile('docs/load-semantics.md', 'utf8')
-            let missing = 0
-            for (const anchor of [...new Set(LOADER_RULES.map((r) => r.spec.reference))].sort()) {
-              if (!docs.includes('{#' + anchor + '}')) {
-                console.error('::error::docs/load-semantics.md has no section for loader reference \'' + anchor + '\'.')
-                missing += 1
-              }
-            }
-            // Every format's mechanism sentence is shown verbatim in the UI,
-            // so an empty one would put a blank where an explanation goes.
-            for (const spec of allFormats()) {
-              if (spec.mechanism.length < 40 || spec.shape.length < 4) {
-                console.error('::error::Format ' + spec.id + ' has no usable mechanism or shape string.')
-                missing += 1
-              }
-            }
-            if (missing > 0) process.exit(1)
-            console.log(LOADER_RULES.length + ' loader rules and ' + allFormats().length + ' formats documented.')
-          "
-
-      - name: Assert a hostile repository cannot hang the analyser
-        # A 2 MB single line used to take about three quarters of an hour,
-        # because the expression that found calls backtracked quadratically.
-        # The suite covers this; running it against a real directory on a
-        # real runner covers the read path too. 90 s is ~100x the measured
-        # cost, so only a return of quadratic behaviour fails here.
-        timeout-minutes: 3
-        run: |
-          mkdir -p /tmp/hostile/src
-          node -e "
-            const { writeFileSync } = require('node:fs')
-            writeFileSync('/tmp/hostile/src/bundle.js', 'x = ' + 'a'.repeat(2_000_000))
-            writeFileSync('/tmp/hostile/requirements.txt', 'torch>=2.0\n')
-            for (let i = 0; i < 4000; i += 1) {
-              writeFileSync('/tmp/hostile/src/m' + i + '.py', 'import torch\ntorch.load(\"nowhere.pt\")\n')
-            }
-          "
-          start=$(date +%s)
-          node bin/deadweight.ts scan /tmp/hostile --quiet --fail-on none > /dev/null
-          elapsed=$(( $(date +%s) - start ))
-          echo "Analysed a hostile tree in ${elapsed}s."
-          if [ "$elapsed" -gt 90 ]; then
-            echo "::error::A hostile tree took ${elapsed}s. Something is superlinear again."
-            exit 1
-          fi
-
-      - name: Assert a malformed BOM gets guidance, not a stack trace
-        # `diff` reads a file named on a command line, which is still input.
-        # The contract is the four-part error, not a TypeError message.
-        run: |
-          echo '{"entries":[null]}' > /tmp/broken.json
-          node bin/deadweight.ts bom fixtures/demo-project --out /tmp/good.json --quiet
-          set +e
-          out=$(node bin/deadweight.ts diff /tmp/broken.json /tmp/good.json 2>&1)
-          code=$?
-          set -e
-          echo "$out"
-          if [ "$code" -ne 1 ]; then
-            echo "::error::A malformed BOM should exit 1, got ${code}."
-            exit 1
-          fi
-          case "$out" in
-            *"stopped unexpectedly"*)
-              echo "::error::A malformed BOM produced an unhandled error instead of guidance."
-              exit 1 ;;
-          esac
-          case "$out" in
-            *"could not be read"*) echo "A malformed BOM was refused with guidance." ;;
-            *) echo "::error::Expected the bad-bom guidance."; exit 1 ;;
-          esac
+      - name: Assert the product's claims
+        # Twelve checks: the CLI runs from source, the exit codes are what the
+        # README documents, the analysis is reproducible and free of
+        # timestamps, no deserialising or decompressing call is reachable, the
+        # engine reads no clock and no browser global, nothing in the bundle
+        # can reach the network, the error pages stand alone, the demo is a
+        # file list rather than a fixture of results, every loader rule is
+        # documented, a deliberately hostile tree analyses inside a budget,
+        # and a malformed BOM is refused with guidance.
+        timeout-minutes: 5
+        run: npm run assert-claims

@@ -22,7 +22,8 @@
     "error-pages": "node scripts/error-pages.ts",
     "docs-numbers": "node scripts/docs-numbers.ts",
     "screenshots": "node scripts/screenshots.ts",
-    "verify": "npm run lint && npm run typecheck && npm test && npm run build && node scripts/make-fixtures.ts --check && node scripts/demo-tree.ts --check && node scripts/error-pages.ts --check && node scripts/docs-numbers.ts --check"
+    "verify": "npm run lint && npm run typecheck && npm test && npm run build && node scripts/make-fixtures.ts --check && node scripts/demo-tree.ts --check && node scripts/error-pages.ts --check && node scripts/docs-numbers.ts --check && npm run assert-claims",
+    "assert-claims": "node scripts/assert-claims.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

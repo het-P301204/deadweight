@@ -154,12 +154,19 @@ channel `connect-src 'none'` cannot stop.
 ### Verification
 
 <!-- dw:tests -->308<!-- /dw --> tests across the engine and the design
-tokens. <!-- dw:ciasserts -->14<!-- /dw --> of CI's
-<!-- dw:cisteps -->21<!-- /dw --> steps assert the product's claims rather
-than only that it builds: no clock or randomness in the engine, an identical
-digest across two runs, no network API in the bundle, no browser global in
-the engine, no deserialising call in the analysis path, every generated
-artifact matching its generator, every loader rule resolving to a documented
-section, a deliberately hostile tree analysing inside a time budget, a
-malformed BOM getting guidance rather than a stack trace, and the exit codes
-behaving as documented.
+tokens, plus <!-- dw:claims -->16<!-- /dw --> claims asserted by
+`scripts/assert-claims.ts`: no clock or randomness in the engine, an identical
+digest across two runs, no network API in the bundle, no browser global in the
+engine, no deserialising call in the analysis path, every generated artifact
+matching its generator, every loader rule resolving to a documented section, a
+deliberately hostile tree analysing inside a time budget, a malformed BOM
+getting guidance rather than a stack trace, and the exit codes behaving as
+documented.
+
+Those checks were thirteen shell steps that existed only in the workflow, so
+they could not be run before pushing — and a change that passed every local
+check still failed on the runner, because a grep for `JSON.parse` matched a
+comment *about* `JSON.parse`. They are one Node script now, called by both
+`npm run verify` and CI, and reading the files in Node rather than grepping
+them lets the checks skip comment lines, which is what the original failure
+was really about.
